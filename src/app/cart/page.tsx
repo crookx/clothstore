@@ -46,7 +46,8 @@ export default function CartPage() {
                       layout="fill"
                       objectFit="cover"
                       className="rounded-md"
-                      data-ai-hint={`${item.category} product cart`}
+                      // Enhanced AI Hint: Added 'cart item' context
+                      data-ai-hint={`${item.category.toLowerCase()} cart item`}
                     />
                   </div>
                 <div className="flex-grow mb-4 sm:mb-0">

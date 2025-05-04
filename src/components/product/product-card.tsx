@@ -38,7 +38,8 @@ export default function ProductCard({ product }: ProductCardProps) {
                     "object-cover transition-transform duration-500 ease-in-out group-hover:scale-105",
                     "w-full h-full" // Ensure image fills the container
                 )}
-                data-ai-hint={`${product.category} product`}
+                // Enhanced AI Hint: Added 'product card' context
+                data-ai-hint={`${product.category.toLowerCase()} product card`}
              />
          </div>
         </CardHeader>

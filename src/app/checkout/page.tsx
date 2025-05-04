@@ -8,16 +8,32 @@ import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
 import Image from 'next/image';
 import Link from 'next/link';
-import { CreditCard, Truck } from 'lucide-react';
+import { CreditCard, Truck, LogIn, User as UserIcon } from 'lucide-react'; // Added LogIn, UserIcon
 import { useToast } from '@/hooks/use-toast';
-import { useRouter } from 'next/navigation'; // Use next/navigation for App Router
-import { useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { useState, useEffect } from 'react';
+import { placeOrder } from '@/services/orderService'; // Import the order service
+import { auth } from '@/lib/firebase/config'; // Import Firebase auth
+import { onAuthStateChanged, User } from 'firebase/auth'; // Import auth state listener and User type
 
 export default function CheckoutPage() {
   const { cart, clearCart } = useCart();
   const { toast } = useToast();
   const router = useRouter();
   const [isLoading, setIsLoading] = useState(false);
+  const [currentUser, setCurrentUser] = useState<User | null>(null); // State for authenticated user
+  const [authLoading, setAuthLoading] = useState(true); // State for auth loading
+
+  // --- Listen for Authentication State Changes ---
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      setCurrentUser(user);
+      setAuthLoading(false); // Auth state determined
+    });
+    // Cleanup subscription on unmount
+    return () => unsubscribe();
+  }, []);
+
 
   const subtotal = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
   const shippingCost = 5.00; // Example shipping cost
@@ -25,40 +41,136 @@ export default function CheckoutPage() {
   const tax = subtotal * taxRate;
   const total = subtotal + shippingCost + tax;
 
+
   const handlePlaceOrder = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setIsLoading(true);
 
-    // Simulate order placement (replace with actual API call/Firebase logic)
-    await new Promise(resolve => setTimeout(resolve, 1500));
+    // --- Comment for User: Authentication Check ---
+    // You might want to enforce login before checkout, or allow guest checkout.
+    // Currently, it allows guest checkout but associates the order with the user if logged in.
+    // if (!currentUser) {
+    //   toast({ title: "Please Log In", description: "You need to be logged in to place an order.", variant: "destructive" });
+    //   setIsLoading(false);
+    //   // Optionally redirect to login page: router.push('/login');
+    //   return;
+    // }
 
-    console.log('Order placed for:', cart); // Log for debugging
+    const formData = new FormData(event.currentTarget);
+    const shippingInfo = {
+      firstName: formData.get('firstName') as string,
+      lastName: formData.get('lastName') as string,
+      address: formData.get('address') as string,
+      city: formData.get('city') as string,
+      state: formData.get('state') as string,
+      zip: formData.get('zip') as string,
+      email: formData.get('email') as string,
+    };
 
-    // Clear the cart
-    clearCart();
+    // --- Comment for User: Payment Gateway Integration ---
+    // This is where you would integrate your payment gateway (e.g., Stripe).
+    // 1. Create a payment intent on your server.
+    // 2. Collect payment details using Stripe Elements or similar.
+    // 3. Confirm the payment intent on the client.
+    // 4. If payment is successful, then proceed to place the order in Firestore.
+    //
+    // const paymentIntentId = await processPayment(formData.get('cardNumber'), ...); // Placeholder
+    // if (!paymentIntentId) {
+    //   toast({ title: "Payment Failed", description: "Could not process payment.", variant: "destructive" });
+    //   setIsLoading(false);
+    //   return;
+    // }
+    // --- End Payment Gateway Placeholder ---
 
-    setIsLoading(false);
 
-    // Show success toast
-    toast({
-      title: "Order Placed Successfully!",
-      description: "Thank you for your purchase. Your order is being processed.",
-      variant: 'default', // Use default or create a success variant
-    });
+    try {
+       // Pass the current user to the placeOrder function
+      const orderId = await placeOrder(
+        shippingInfo,
+        cart,
+        subtotal,
+        shippingCost,
+        tax,
+        total,
+        // paymentIntentId, // Pass payment ID if using a gateway
+        currentUser // Pass the user object
+      );
 
-    // Redirect to a confirmation page or home
-    router.push('/'); // Redirect to home for now
+      console.log('Order placed successfully with ID:', orderId); // Log for debugging
+
+      // Clear the cart *after* successful order placement
+      clearCart();
+
+      // Show success toast
+      toast({
+        title: "Order Placed Successfully!",
+        description: `Thank you! Your order #${orderId.substring(0, 6)} is being processed.`, // Show partial ID
+        variant: 'default',
+      });
+
+      // Redirect to a confirmation page or home
+      router.push('/'); // Redirect to home for now (consider an order confirmation page)
+
+    } catch (error) {
+      console.error("Order placement failed:", error);
+      toast({
+        title: "Order Failed",
+        // Display specific error messages if available (e.g., stock issues)
+        description: error instanceof Error ? error.message : "An unexpected error occurred. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  if (cart.length === 0 && typeof window !== 'undefined') {
-    // Redirect if cart is empty (client-side check after mount)
-     router.push('/');
-     return null; // Render nothing while redirecting
-  }
+  // Redirect if cart is empty (client-side check)
+   useEffect(() => {
+      if (!isLoading && cart.length === 0 && typeof window !== 'undefined') {
+        router.push('/');
+      }
+    }, [cart, isLoading, router]);
+
+   if (cart.length === 0) {
+        // Don't render the form if cart is empty or redirecting
+       return (
+            <div className="container mx-auto px-4 py-8 text-center">
+                <p className="text-muted-foreground">Your cart is empty. Redirecting...</p>
+            </div>
+       );
+   }
+
+
+  // Show loading indicator while checking auth state
+  if (authLoading) {
+     return (
+        <div className="container mx-auto px-4 py-8 text-center">
+           <p className="text-muted-foreground">Loading user information...</p>
+           {/* Optional: Add a spinner here */}
+        </div>
+     );
+   }
+
 
   return (
     <div className="container mx-auto px-4 py-8">
-      <h1 className="text-3xl font-bold mb-8 text-primary">Checkout</h1>
+        <div className="flex justify-between items-center mb-8">
+           <h1 className="text-3xl font-bold text-primary">Checkout</h1>
+            {/* --- User Auth Display/Link --- */}
+           <div>
+             {currentUser ? (
+                 <span className="text-sm text-muted-foreground flex items-center">
+                   <UserIcon className="mr-2 h-4 w-4"/> Logged in as {currentUser.email || currentUser.displayName || 'User'}
+                 </span>
+              ) : (
+                <Link href="/login" passHref> {/* --- Comment: Create /login page --- */}
+                   <Button variant="outline">
+                       <LogIn className="mr-2 h-4 w-4" /> Log In / Sign Up
+                   </Button>
+                 </Link>
+              )}
+            </div>
+        </div>
 
       <form onSubmit={handlePlaceOrder} className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* Shipping & Payment Details */}
@@ -71,61 +183,76 @@ export default function CheckoutPage() {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <Label htmlFor="firstName">First Name</Label>
-                  <Input id="firstName" required placeholder="Astra" />
+                  <Input id="firstName" name="firstName" required placeholder="Astra" />
                 </div>
                 <div>
                   <Label htmlFor="lastName">Last Name</Label>
-                  <Input id="lastName" required placeholder="Baby" />
+                  <Input id="lastName" name="lastName" required placeholder="Baby" />
                 </div>
               </div>
               <div>
                 <Label htmlFor="address">Address</Label>
-                <Input id="address" required placeholder="123 Starship Lane" />
+                <Input id="address" name="address" required placeholder="123 Starship Lane" />
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div>
                   <Label htmlFor="city">City</Label>
-                  <Input id="city" required placeholder="Galaxy City" />
+                  <Input id="city" name="city" required placeholder="Galaxy City" />
                 </div>
                 <div>
                   <Label htmlFor="state">State/Province</Label>
-                  <Input id="state" required placeholder="Cosmos" />
+                  <Input id="state" name="state" required placeholder="Cosmos" />
                 </div>
                 <div>
                   <Label htmlFor="zip">ZIP/Postal Code</Label>
-                  <Input id="zip" required placeholder="98765" />
+                  <Input id="zip" name="zip" required placeholder="98765" />
                 </div>
               </div>
               <div>
                 <Label htmlFor="email">Email Address</Label>
-                 <Input id="email" type="email" required placeholder="you@example.com" />
+                 {/* Pre-fill email if user is logged in, make it read-only? */}
+                 <Input
+                    id="email"
+                    name="email"
+                    type="email"
+                    required
+                    placeholder="you@example.com"
+                    defaultValue={currentUser?.email || ''}
+                    // readOnly={!!currentUser?.email} // Optional: Prevent editing if logged in
+                 />
                </div>
             </CardContent>
           </Card>
 
-           <Card className="shadow-sm hover:shadow-md transition-shadow duration-300">
+           {/* --- Payment Section (Commented Out/Placeholder) --- */}
+           <Card className="shadow-sm hover:shadow-md transition-shadow duration-300 opacity-50 cursor-not-allowed">
              <CardHeader>
                <CardTitle className="flex items-center text-primary"><CreditCard className="mr-2 h-5 w-5" /> Payment Details</CardTitle>
-               <CardDescription>Enter your payment information below.</CardDescription>
+               <CardDescription>Payment gateway integration is pending.</CardDescription>
              </CardHeader>
              <CardContent className="space-y-4">
+                 {/* --- Comment for User: Payment Gateway Elements ---
+                 This section should be replaced by your payment gateway's
+                 UI elements (e.g., Stripe Card Element). For now, it's disabled.
+                 Remove the 'opacity-50 cursor-not-allowed' from the Card above when implemented.
+                 --- */}
                <div>
                  <Label htmlFor="cardNumber">Card Number</Label>
-                 <Input id="cardNumber" required placeholder="**** **** **** 1234" />
+                 <Input id="cardNumber" name="cardNumber" placeholder="**** **** **** 1234" disabled />
                </div>
                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                  <div>
                    <Label htmlFor="expiryDate">Expiry Date</Label>
-                   <Input id="expiryDate" required placeholder="MM/YY" />
+                   <Input id="expiryDate" name="expiryDate" placeholder="MM/YY" disabled />
                  </div>
                  <div>
                    <Label htmlFor="cvc">CVC</Label>
-                   <Input id="cvc" required placeholder="123" />
+                   <Input id="cvc" name="cvc" placeholder="123" disabled />
                  </div>
                </div>
-              {/* Add more payment fields or gateway integration here */}
              </CardContent>
            </Card>
+           {/* --- End Payment Section Placeholder --- */}
         </div>
 
         {/* Order Summary */}
@@ -145,7 +272,8 @@ export default function CheckoutPage() {
                              layout="fill"
                              objectFit="cover"
                              className="rounded"
-                             data-ai-hint={`${item.category} product checkout summary`}
+                              // Enhanced AI Hint: Added 'checkout summary' context
+                             data-ai-hint={`${item.category.toLowerCase()} checkout summary`}
                            />
                          </div>
                        <span className="truncate w-32">{item.name}</span>
@@ -174,8 +302,14 @@ export default function CheckoutPage() {
               </div>
             </CardContent>
             <CardFooter>
-              <Button type="submit" size="lg" className="w-full bg-accent hover:bg-accent/90 text-accent-foreground" disabled={isLoading}>
-                 {isLoading ? 'Processing...' : 'Place Order'}
+                {/* --- Comment for User: Disable button until payment implemented --- */}
+              <Button
+                 type="submit"
+                 size="lg"
+                 className="w-full bg-accent hover:bg-accent/90 text-accent-foreground"
+                 disabled={isLoading /* || !isPaymentReady */} // Add payment readiness check
+                 >
+                 {isLoading ? 'Processing...' : 'Place Order (Payment Pending)'}
                </Button>
             </CardFooter>
           </Card>
