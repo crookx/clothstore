@@ -14,7 +14,7 @@
  *       - On Windows (PowerShell): `$env:GOOGLE_APPLICATION_CREDENTIALS="/path/to/your/serviceAccountKey.json"`
  *       - (You might need to set this variable each time you open a new terminal, or add it to your shell's profile script like .bashrc or .zshrc)
  * 3.  Install Dependencies:
- *     - Run `npm install` or `yarn install` in your project root if you haven't already (to install `firebase-admin`, `tsx`, and `dotenv`).
+ *     - Run `npm install` or `yarn install` in your project root if you haven't already (to install `firebase-admin`, `tsx`, `dotenv` and `dotenv-cli`).
  * 4.  Run the Script:
  *     - Execute the script from your project root using: `npm run seed:firestore` or `yarn seed:firestore`
  *
@@ -23,14 +23,10 @@
  * - Clear the existing 'products' collection (optional, uncomment if needed).
  * - Add sample product data using batch writes.
  */
-import dotenv from 'dotenv';
+// Removed dotenv import and explicit config loading - handled by dotenv-cli now
 import path from 'path';
 import admin from 'firebase-admin';
 import type { Product } from '@/types/product'; // Adjust path if necessary
-
-// --- Load Environment Variables ---
-// Load variables from .env.local located in the project root
-dotenv.config({ path: path.resolve(process.cwd(), '.env.local') });
 
 
 // --- Configuration ---
@@ -42,11 +38,23 @@ const PROJECT_ID = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID; // Get Project I
 const COLLECTION_NAME = 'products';
 const BATCH_SIZE = 100; // Firestore batch write limit is 500 operations
 
-if (!PROJECT_ID) {
-    console.error("Error: NEXT_PUBLIC_FIREBASE_PROJECT_ID environment variable not set or not loaded from .env.local.");
-    console.error("Ensure your .env.local file exists in the project root and contains the variable.");
-    process.exit(1);
+// --- Environment Variable Validation ---
+// Check if essential environment variables are defined.
+const requiredEnvVars = [
+  'NEXT_PUBLIC_FIREBASE_PROJECT_ID',
+  // Add other required Firebase variables here if the script needs them directly
+];
+
+const missingEnvVars = requiredEnvVars.filter((key) => !process.env[key]);
+
+if (missingEnvVars.length > 0) {
+  const errorMessage =
+    `Missing required environment variables for seeding script: ${missingEnvVars.join(', ')}. ` +
+    `Please ensure they are set in your .env.local file and the script is run using 'npm run seed:firestore'.`;
+  console.error("Error:", errorMessage);
+  process.exit(1); // Exit if required variables are missing
 }
+
 
 // --- Initialize Firebase Admin SDK ---
 try {
@@ -189,5 +197,3 @@ seedData().catch((error) => {
     console.error('Error during Firestore seeding:', error);
     process.exit(1);
 });
-
-    
