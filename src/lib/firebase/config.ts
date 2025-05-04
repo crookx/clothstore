@@ -40,9 +40,17 @@ if (
     typeof window !== 'undefined' || // Check if running on the client
     process.env.NODE_ENV !== 'production' // Check if running in development server-side
    ) {
-    const usingPlaceholders = Object.entries(firebaseConfig)
-        .filter(([key]) => key !== 'measurementId') // Exclude optional measurementId
-        .some(([, value]) => typeof value === 'string' && value.startsWith('MISSING_'));
+    const requiredKeys: (keyof typeof firebaseConfig)[] = [
+        'apiKey',
+        'authDomain',
+        'projectId',
+        'storageBucket',
+        'messagingSenderId',
+        'appId',
+    ];
+    const usingPlaceholders = requiredKeys.some(
+        (key) => firebaseConfig[key]?.startsWith('MISSING_')
+    );
 
     if (usingPlaceholders) {
         console.warn(
@@ -84,7 +92,15 @@ try {
   auth = getAuth(app);
 } catch (error) {
     console.error("Firebase Auth service initialization failed:", error);
-    throw new Error(`Firebase Auth service initialization failed. Original error: ${error instanceof Error ? error.message : String(error)}`);
+    // Only throw if it's not an invalid API key error when using placeholders,
+    // as that specific error is expected until configured.
+    const isInvalidApiKeyError = error instanceof Error && error.message.includes('invalid-api-key');
+    const isMissingApiKey = firebaseConfig.apiKey === 'MISSING_API_KEY';
+    if (!(isInvalidApiKeyError && isMissingApiKey)) {
+        throw new Error(`Firebase Auth service initialization failed. Original error: ${error instanceof Error ? error.message : String(error)}`);
+    } else {
+         console.warn("Firebase Auth initialization skipped due to missing API key. Authentication features will not work until configured.");
+    }
 }
 
 try {
