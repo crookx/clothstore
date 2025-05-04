@@ -1,8 +1,11 @@
+
 /**
  * Firestore Seeding Script
  *
  * How to run:
- * 1.  Get Service Account Credentials:
+ * 1.  Ensure you have a `.env.local` file in your project root with your
+ *     Firebase configuration variables (e.g., NEXT_PUBLIC_FIREBASE_PROJECT_ID).
+ * 2.  Get Service Account Credentials:
  *     - Go to your Firebase Project Settings > Service accounts.
  *     - Click "Generate new private key" and download the JSON file.
  *     - **IMPORTANT:** Rename this file (e.g., `serviceAccountKey.json`) and place it in a secure location *outside* your project's source control (add it to `.gitignore`). **NEVER COMMIT THIS FILE.**
@@ -10,9 +13,9 @@
  *       - On Linux/macOS: `export GOOGLE_APPLICATION_CREDENTIALS="/path/to/your/serviceAccountKey.json"`
  *       - On Windows (PowerShell): `$env:GOOGLE_APPLICATION_CREDENTIALS="/path/to/your/serviceAccountKey.json"`
  *       - (You might need to set this variable each time you open a new terminal, or add it to your shell's profile script like .bashrc or .zshrc)
- * 2.  Install Dependencies:
- *     - Run `npm install` or `yarn install` in your project root if you haven't already (to install `firebase-admin` and `tsx`).
- * 3.  Run the Script:
+ * 3.  Install Dependencies:
+ *     - Run `npm install` or `yarn install` in your project root if you haven't already (to install `firebase-admin`, `tsx`, and `dotenv`).
+ * 4.  Run the Script:
  *     - Execute the script from your project root using: `npm run seed:firestore` or `yarn seed:firestore`
  *
  * This script will:
@@ -20,9 +23,15 @@
  * - Clear the existing 'products' collection (optional, uncomment if needed).
  * - Add sample product data using batch writes.
  */
-
+import dotenv from 'dotenv';
+import path from 'path';
 import admin from 'firebase-admin';
 import type { Product } from '@/types/product'; // Adjust path if necessary
+
+// --- Load Environment Variables ---
+// Load variables from .env.local located in the project root
+dotenv.config({ path: path.resolve(process.cwd(), '.env.local') });
+
 
 // --- Configuration ---
 // You MUST set the GOOGLE_APPLICATION_CREDENTIALS environment variable
@@ -34,16 +43,33 @@ const COLLECTION_NAME = 'products';
 const BATCH_SIZE = 100; // Firestore batch write limit is 500 operations
 
 if (!PROJECT_ID) {
-    console.error("Error: NEXT_PUBLIC_FIREBASE_PROJECT_ID environment variable not set.");
+    console.error("Error: NEXT_PUBLIC_FIREBASE_PROJECT_ID environment variable not set or not loaded from .env.local.");
+    console.error("Ensure your .env.local file exists in the project root and contains the variable.");
     process.exit(1);
 }
 
 // --- Initialize Firebase Admin SDK ---
 try {
-    admin.initializeApp({
-        // Credential is automatically found from GOOGLE_APPLICATION_CREDENTIALS env var
-        projectId: PROJECT_ID,
-    });
+    // Check if GOOGLE_APPLICATION_CREDENTIALS is set
+    if (!process.env.GOOGLE_APPLICATION_CREDENTIALS) {
+        console.warn("Warning: GOOGLE_APPLICATION_CREDENTIALS environment variable is not set.");
+        console.warn("Attempting to initialize Firebase Admin SDK with default credentials.");
+        // If you're running this in a Google Cloud environment (like Cloud Functions, App Engine),
+        // it might still work without the variable set explicitly.
+        // For local development, you MUST set GOOGLE_APPLICATION_CREDENTIALS.
+         admin.initializeApp({
+            projectId: PROJECT_ID,
+         });
+
+    } else {
+        // Recommended: Initialize with explicit credentials from the environment variable
+        admin.initializeApp({
+            // Credential is automatically found from GOOGLE_APPLICATION_CREDENTIALS env var
+            projectId: PROJECT_ID,
+         });
+    }
+
+
 } catch (error: any) {
     if (error.code === 'app/duplicate-app') {
         console.log('Firebase Admin SDK already initialized.');
@@ -104,20 +130,8 @@ const sampleProducts: Omit<Product, 'id'>[] = [
 async function clearCollection(collectionPath: string) {
     console.log(`Clearing collection: ${collectionPath}...`);
     const collectionRef = db.collection(collectionPath);
-    const querySnapshot = await collectionRef.limit(BATCH_SIZE).get();
 
-    while (querySnapshot.size > 0) {
-        const batch = db.batch();
-        querySnapshot.docs.forEach((doc) => {
-            batch.delete(doc.ref);
-        });
-        await batch.commit();
-        // Get the next batch
-        const nextBatchSnapshot = await collectionRef.limit(BATCH_SIZE).get();
-        querySnapshot = nextBatchSnapshot; // This line seems incorrect, should reassign
-        console.log(`Deleted ${querySnapshot.size} documents...`); // Log progress after commit
-    }
-     // Need to fetch next batch correctly after commit
+    // Need to fetch next batch correctly after commit
       let snapshot;
       do {
         snapshot = await collectionRef.limit(BATCH_SIZE).get();
@@ -155,7 +169,7 @@ async function seedData() {
         count++;
 
         if (count % BATCH_SIZE === 0) {
-            console.log(`Committing batch ${count / BATCH_SIZE}...`);
+            console.log(`Committing batch ${Math.ceil(count / BATCH_SIZE)}...`);
             await batch.commit();
             batch = db.batch(); // Start a new batch
         }
@@ -175,3 +189,5 @@ seedData().catch((error) => {
     console.error('Error during Firestore seeding:', error);
     process.exit(1);
 });
+
+    
