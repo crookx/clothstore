@@ -1,8 +1,9 @@
+
 // src/lib/firebase/config.ts
 import { initializeApp, getApps, getApp, type FirebaseOptions } from 'firebase/app';
-import { getAuth, connectAuthEmulator } from 'firebase/auth';
-import { getFirestore, connectFirestoreEmulator } from 'firebase/firestore';
-import { getStorage, connectStorageEmulator } from 'firebase/storage';
+import { getAuth, connectAuthEmulator, type Auth } from 'firebase/auth';
+import { getFirestore, connectFirestoreEmulator, type Firestore } from 'firebase/firestore';
+import { getStorage, connectStorageEmulator, type FirebaseStorage } from 'firebase/storage';
 
 // --- IMPORTANT ---
 // The configuration values below are read from your environment variables.
@@ -46,30 +47,34 @@ const missingEnvVars = requiredEnvVarKeys.filter((key) => {
     // Use the actual env var name for checking process.env
     const value = process.env[envVarName];
     // Check if the value is missing, empty, or still a placeholder
-    return !value || value.startsWith('YOUR_') || value.includes('XXX'); // Add common placeholders
+    return !value || value.startsWith('YOUR_') || value.includes('XXX') || value === "";
 });
 
 let app: ReturnType<typeof initializeApp> | undefined;
-let auth: ReturnType<typeof getAuth> | undefined;
-let db: ReturnType<typeof getFirestore> | undefined;
-let storage: ReturnType<typeof getStorage> | undefined;
+let auth: Auth | undefined;
+let db: Firestore | undefined;
+let storage: FirebaseStorage | undefined;
 let firebaseInitializationError: Error | null = null;
 
-if (missingEnvVars.length > 0) {
-  const missingVarNames = missingEnvVars.map(key => `NEXT_PUBLIC_FIREBASE_${key.replace(/([A-Z])/g, '_$1').toUpperCase()}`);
-  const errorMessage =
-    `🔴 FATAL ERROR: Missing or placeholder Firebase environment variables: ${missingVarNames.join(', ')}. ` +
+const errorMessage =
+    `🔴 FATAL ERROR: Missing or placeholder Firebase environment variables: ${missingEnvVars.join(', ')}. ` +
     `\n\n➡️ Please take the following steps:\n` +
     `1. CHECK FILE LOCATION: Ensure a file named '.env.local' exists in the ROOT directory of your project (the same folder as package.json).\n` +
     `2. CHECK VARIABLES: Open '.env.local' and verify that ALL the required variables listed above are present and have your ACTUAL Firebase credential values (NOT placeholders like 'YOUR_...' or 'XXX' or empty values).\n` +
     `3. RESTART SERVER: After creating or modifying '.env.local', you MUST STOP your Next.js development server (Ctrl+C in the terminal) and RESTART it using 'npm run dev' or 'yarn dev'.\n`;
 
-    firebaseInitializationError = new Error("Firebase configuration error. Check console for details.");
+if (missingEnvVars.length > 0) {
+    // Set the error object immediately
+    firebaseInitializationError = new Error(errorMessage);
 
     // Log detailed error message to the server console AND client console (if possible)
-    console.error(errorMessage); // Server console
+    console.error(errorMessage); // Server console log during build/SSR
     if (typeof window !== 'undefined') {
-         console.error(errorMessage); // Client console
+         console.error(errorMessage); // Client console log
+    }
+    // Throw the error during initial script evaluation if on the server
+    if (typeof window === 'undefined') {
+        throw firebaseInitializationError;
     }
 
 } else {
@@ -100,14 +105,27 @@ if (missingEnvVars.length > 0) {
              // Check if already connected to avoid errors
              // Note: Emulator connection status check is tricky. Rely on conditional connection.
              try {
-                connectAuthEmulator(auth, "http://localhost:9099", { disableWarnings: true });
-                connectFirestoreEmulator(db, "localhost", 8080);
-                connectStorageEmulator(storage, "localhost", 9199);
+                // Check if emulators are *already* connected to prevent errors
+                // This check is fragile, Firebase SDK doesn't provide a robust way
+                // @ts-ignore // Accessing private property for check
+                if (!auth?.config?.emulator) {
+                    connectAuthEmulator(auth, "http://localhost:9099", { disableWarnings: true });
+                }
+                 // @ts-ignore
+                if (!db?.config?.emulator) {
+                     connectFirestoreEmulator(db, "localhost", 8080);
+                }
+                 // @ts-ignore
+                 if (!storage?.config?.emulator) {
+                     connectStorageEmulator(storage, "localhost", 9199);
+                 }
                  console.log("Attempted connection to Auth, Firestore, and Storage Emulators.");
              } catch (emulatorError: any) {
                  // Gracefully handle errors if emulators are already connected or unavailable
-                 if (emulatorError.code !== 'failed-precondition') {
+                 if (emulatorError.code !== 'failed-precondition' && !emulatorError.message.includes("already connected")) {
                     console.warn("Emulator connection error (may be expected if already connected or emulators not running):", emulatorError.message);
+                 } else {
+                     // console.log("Emulators likely already connected."); // Reduce console noise
                  }
              }
           }
@@ -128,11 +146,14 @@ export const ensureFirebaseServices = () => {
     }
     if (!app || !auth || !db || !storage) {
       // This case should ideally be covered by firebaseInitializationError, but as a fallback:
-      throw new Error("Firebase services are not available. Initialization might have failed silently. Check server logs and environment variables.");
+       // If we are here, and initializationError is null, it means env vars were present
+       // but something else went wrong during app/service init.
+       const detailedError = new Error("Firebase services are not available. Initialization might have failed silently. Check server logs and environment variables.");
+       firebaseInitializationError = detailedError; // Set the error state
+       throw detailedError;
     }
     return { app, auth, db, storage };
 };
 
-// Direct exports are less safe if initialization fails, use ensureFirebaseServices instead
-// export { app, auth, db, storage };
-export { firebaseInitializationError }; // Export the error state if needed elsewhere
+// Export the error state for checking elsewhere if needed
+export { firebaseInitializationError };
