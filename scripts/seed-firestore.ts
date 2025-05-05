@@ -9,11 +9,10 @@
  * 2.  Get Service Account Credentials:
  *     - Go to your Firebase Project Settings > Service accounts.
  *     - Click "Generate new private key" and download the JSON file.
- *     - **IMPORTANT:** Rename this file (e.g., `serviceAccountKey.json`) and place it in a secure location *outside* your project's source control (add it to `.gitignore`). **NEVER COMMIT THIS FILE.**
- *     - Set the `GOOGLE_APPLICATION_CREDENTIALS` environment variable in your *terminal* (not in .env.local) to the *full path* of this downloaded JSON file.
- *       - On Linux/macOS: `export GOOGLE_APPLICATION_CREDENTIALS="/path/to/your/serviceAccountKey.json"`
- *       - On Windows (PowerShell): `$env:GOOGLE_APPLICATION_CREDENTIALS="C:\path\to\your\serviceAccountKey.json"`
- *       - (You might need to set this variable each time you open a new terminal, or add it to your shell's profile script like .bashrc or .zshrc)
+ *     - **IMPORTANT:** Open the downloaded JSON file, copy its entire content.
+ *     - Paste the copied JSON content into the `SERVICE_ACCOUNT_KEY_JSON` variable in your `.env.local` file,
+ *       replacing the placeholder `'PASTE_YOUR_SERVICE_ACCOUNT_KEY_JSON_CONTENT_HERE'`.
+ *       Ensure the pasted content is enclosed in single quotes and is valid JSON.
  * 3.  Install Dependencies:
  *     - Run `npm install` or `yarn install` in your project root if you haven't already (to install `firebase-admin`, `tsx`, `dotenv-cli`).
  * 4.  Run the Script:
@@ -32,6 +31,7 @@ import type { Product } from '@/types/product'; // Adjust path if necessary
 
 // --- Configuration ---
 const PROJECT_ID = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID; // Get Project ID from env loaded by dotenv-cli
+const SERVICE_ACCOUNT_JSON_STRING = process.env.SERVICE_ACCOUNT_KEY_JSON;
 const COLLECTION_NAME = 'products';
 const BATCH_SIZE = 100; // Firestore batch write limit is 500 operations
 
@@ -39,14 +39,12 @@ const BATCH_SIZE = 100; // Firestore batch write limit is 500 operations
 if (!PROJECT_ID || PROJECT_ID === "YOUR_PROJECT_ID_HERE") {
   const errorMessage =
     `Error: NEXT_PUBLIC_FIREBASE_PROJECT_ID environment variable not set or still has the placeholder value. ` +
-    `Please ensure it is set correctly in your .env.local file and you have replaced "YOUR_PROJECT_ID_HERE" with your actual Firebase Project ID. ` +
-    `Remember to restart your terminal or source your profile if you set it globally.`;
+    `Please ensure it is set correctly in your .env.local file and you have replaced "YOUR_PROJECT_ID_HERE" with your actual Firebase Project ID. `;
   console.error("\n❌ Configuration Error:\n", errorMessage, "\n");
   process.exit(1); // Exit if the crucial Project ID is missing or is the placeholder
 }
 
 // Validate other required environment variables if needed by the admin SDK indirectly
-// (though GOOGLE_APPLICATION_CREDENTIALS is the main one for admin)
 const requiredEnvVarsForAdmin = [
   // Add other NEXT_PUBLIC_ vars if the *admin* SDK specifically needs them, which is unlikely
 ];
@@ -63,33 +61,43 @@ if (missingEnvVars.length > 0) {
 
 // --- Initialize Firebase Admin SDK ---
 try {
-    // Check if GOOGLE_APPLICATION_CREDENTIALS is set
-    if (!process.env.GOOGLE_APPLICATION_CREDENTIALS) {
+    // Check if SERVICE_ACCOUNT_KEY_JSON is set and not the placeholder
+    if (!SERVICE_ACCOUNT_JSON_STRING || SERVICE_ACCOUNT_JSON_STRING === 'PASTE_YOUR_SERVICE_ACCOUNT_KEY_JSON_CONTENT_HERE') {
         console.error("\n❌ Configuration Error:");
-        console.error("GOOGLE_APPLICATION_CREDENTIALS environment variable is not set in your terminal.");
-        console.error("This variable must point to the full path of your downloaded service account key JSON file.");
-        console.error("Example (Linux/macOS): export GOOGLE_APPLICATION_CREDENTIALS=\"/path/to/your/serviceAccountKey.json\"");
-        console.error("Example (Windows PowerShell): $env:GOOGLE_APPLICATION_CREDENTIALS = \"C:\\path\\to\\your\\serviceAccountKey.json\"");
-        console.error("Please set this variable in your current terminal session before running the script.\n");
+        console.error("SERVICE_ACCOUNT_KEY_JSON environment variable is not set correctly in your .env.local file.");
+        console.error("Please open your downloaded serviceAccountKey.json file, copy its content,");
+        console.error("and paste it between the single quotes for SERVICE_ACCOUNT_KEY_JSON in .env.local.\n");
         process.exit(1);
+    }
 
-    } else {
-        // Initialize with explicit credentials from the environment variable
+    let serviceAccount;
+    try {
+        // Attempt to parse the JSON string from the environment variable
+        serviceAccount = JSON.parse(SERVICE_ACCOUNT_JSON_STRING);
+    } catch (parseError) {
+        console.error("\n❌ Configuration Error:");
+        console.error("Failed to parse the SERVICE_ACCOUNT_KEY_JSON value from .env.local.");
+        console.error("Please ensure the content pasted from your serviceAccountKey.json file is valid JSON and enclosed in single quotes.");
+        console.error("Parsing Error:", parseError, "\n");
+        process.exit(1);
+    }
+
+    // Check if already initialized to avoid duplicate app error
+    if (admin.apps.length === 0) {
         admin.initializeApp({
-            // Credential is automatically found from GOOGLE_APPLICATION_CREDENTIALS env var
+            credential: admin.credential.cert(serviceAccount),
             projectId: PROJECT_ID, // Use the validated PROJECT_ID
          });
-         console.log(`🔑 Firebase Admin SDK initialized for project: ${PROJECT_ID}`);
+         console.log(`🔑 Firebase Admin SDK initialized for project: ${PROJECT_ID} using credentials from .env.local`);
+    } else {
+        console.log('ℹ️ Firebase Admin SDK already initialized.');
     }
 
 
 } catch (error: any) {
-    if (error.code === 'app/duplicate-app') {
-        console.log('ℹ️ Firebase Admin SDK already initialized.');
-    } else {
-        console.error('❌ Firebase Admin SDK initialization error:', error);
-        process.exit(1);
-    }
+    // Catch potential errors during initializeApp if parsing succeeded but credentials are bad
+    console.error('❌ Firebase Admin SDK initialization error:', error);
+    process.exit(1);
 }
 
 const db = admin.firestore();
@@ -264,4 +272,3 @@ seedData().catch((error) => {
     console.error('\n❌ Error during Firestore seeding:', error);
     process.exit(1);
 });
-
