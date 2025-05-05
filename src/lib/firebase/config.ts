@@ -1,4 +1,3 @@
-
 // src/lib/firebase/config.ts
 import { initializeApp, getApps, getApp, type FirebaseOptions } from 'firebase/app';
 import { getAuth, connectAuthEmulator, type Auth } from 'firebase/auth';
@@ -48,6 +47,10 @@ if (missingEnvVars.length > 0) {
 
     // Log the error but don't throw immediately, especially on client
     console.error(errorMessage);
+    if (typeof window !== 'undefined') {
+         console.error(errorMessage); // Client console
+     }
+
 
 } else {
     // --- Initialize Firebase App (if no config errors) ---
