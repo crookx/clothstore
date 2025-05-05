@@ -17,10 +17,12 @@ import {
     FormLabel,
     FormMessage,
 } from '@/components/ui/form';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'; // Added CardDescription
 import { useToast } from '@/hooks/use-toast';
 import { useState } from 'react';
-import { addProductAction } from '@/actions/adminProductActions'; // We will create this action next
+import { addProductAction } from '@/actions/adminProductActions'; // Import the action
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+
 
 // Define available categories (you might fetch these dynamically later)
 const productCategories = [
@@ -31,11 +33,12 @@ const productCategories = [
     "Feeding",
     "Clothing",
     "Toys",
-    "Diapering", // Added category
-    "Bathing",   // Added category
-    "Gear",      // Added category
+    "Diapering",
+    "Bathing",
+    "Gear",
+    "Nursery", // Added category
+    "Safety", // Added category
 ];
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 
 export default function AddProductForm() {
@@ -89,6 +92,7 @@ export default function AddProductForm() {
         <Card>
             <CardHeader>
                 <CardTitle>Add New Product</CardTitle>
+                 <CardDescription>Fill in the details for the new product.</CardDescription>
             </CardHeader>
             <CardContent>
                 <Form {...form}>
@@ -134,7 +138,8 @@ export default function AddProductForm() {
                                     <FormItem>
                                         <FormLabel>Price (KES)</FormLabel>
                                         <FormControl>
-                                            <Input type="number" step="0.01" placeholder="e.g., 15000" {...field} disabled={isLoading} />
+                                            {/* Ensure input type allows decimals */}
+                                            <Input type="number" step="any" min="0" placeholder="e.g., 15000.50" {...field} disabled={isLoading} />
                                         </FormControl>
                                         <FormMessage />
                                     </FormItem>
@@ -148,7 +153,7 @@ export default function AddProductForm() {
                                     <FormItem>
                                         <FormLabel>Stock Quantity</FormLabel>
                                         <FormControl>
-                                            <Input type="number" step="1" placeholder="e.g., 25" {...field} disabled={isLoading} />
+                                            <Input type="number" step="1" min="0" placeholder="e.g., 25" {...field} disabled={isLoading} />
                                         </FormControl>
                                         <FormMessage />
                                     </FormItem>
@@ -189,18 +194,18 @@ export default function AddProductForm() {
                                 <FormItem>
                                     <FormLabel>Image URL</FormLabel>
                                     <FormControl>
-                                        <Input placeholder="https://example.com/image.jpg" {...field} disabled={isLoading} />
+                                        <Input placeholder="https://example.com/image.jpg or leave blank for placeholder" {...field} disabled={isLoading} />
                                     </FormControl>
                                     <FormDescription>
-                                        Enter the full URL of the product image. Use a service like Firebase Storage or Picsum Photos.
+                                        Enter the full URL of the product image. Use a service like Firebase Storage or Picsum Photos. Leave blank to use a default placeholder.
                                     </FormDescription>
                                     <FormMessage />
                                 </FormItem>
                             )}
                         />
 
-                        <Button type="submit" disabled={isLoading}>
-                            {isLoading ? 'Adding...' : 'Add Product'}
+                        <Button type="submit" disabled={isLoading} className="w-full sm:w-auto">
+                            {isLoading ? 'Adding Product...' : 'Add Product'}
                         </Button>
                     </form>
                 </Form>

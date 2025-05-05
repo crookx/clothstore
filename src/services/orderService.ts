@@ -1,7 +1,7 @@
 // src/services/orderService.ts
 'use server'; // Indicate this runs on the server
 
-import { db, auth } from '@/lib/firebase/config'; // Import db and auth
+import { ensureFirebaseServices } from '@/lib/firebase/config'; // Import the helper
 import type { CartItem } from '@/types/product';
 import type { User } from 'firebase/auth'; // Import User type
 import { collection, addDoc, serverTimestamp, doc, getDoc, writeBatch, runTransaction } from 'firebase/firestore';
@@ -47,7 +47,7 @@ interface OrderData {
  * @param total - The total order amount.
  * @param currentUser - The currently authenticated Firebase user (optional).
  * @returns A promise that resolves to the ID of the newly created order document.
- * @throws Throws an error if saving the order or updating stock fails.
+ * @throws Throws an error if saving the order or updating stock fails, or if Firebase services are not initialized.
  */
 export async function placeOrder(
   shippingInfo: ShippingInfo,
@@ -63,25 +63,27 @@ export async function placeOrder(
     throw new Error("Cannot place an empty order.");
   }
 
-  const orderData: OrderData = {
-    userId: currentUser ? currentUser.uid : null, // Get user ID if logged in
-    email: shippingInfo.email, // Use provided email
-    shippingInfo,
-    items: cart,
-    subtotal,
-    shippingCost,
-    tax,
-    total,
-    status: 'pending', // Initial status
-    createdAt: serverTimestamp(), // Use Firestore server timestamp
-    // paymentIntentId: paymentIntentId || undefined, // Uncomment if using payment gateway
-  };
-
+  let db;
   try {
-    // --- Firestore Transaction for Atomicity ---
-    // Use a transaction to ensure that either the order is created AND stock is updated,
-    // or neither operation happens if there's an error (e.g., insufficient stock).
+    // Ensure Firebase services are ready before proceeding
+    const services = ensureFirebaseServices();
+    db = services.db;
 
+    const orderData: OrderData = {
+      userId: currentUser ? currentUser.uid : null, // Get user ID if logged in
+      email: shippingInfo.email, // Use provided email
+      shippingInfo,
+      items: cart,
+      subtotal,
+      shippingCost,
+      tax,
+      total,
+      status: 'pending', // Initial status
+      createdAt: serverTimestamp(), // Use Firestore server timestamp
+      // paymentIntentId: paymentIntentId || undefined, // Uncomment if using payment gateway
+    };
+
+    // --- Firestore Transaction for Atomicity ---
     const orderId = await runTransaction(db, async (transaction) => {
       // 1. Check stock and prepare updates
       const stockUpdates: { ref: any; newStock: number }[] = [];
@@ -100,36 +102,37 @@ export async function placeOrder(
 
         const newStock = currentStock - item.quantity;
         stockUpdates.push({ ref: productRef, newStock: newStock });
-        // transaction.update(productRef, { stock: newStock }); // Update stock within transaction
       }
 
       // 2. Create the order document
       const ordersCollectionRef = collection(db, 'orders');
-      const newOrderRef = doc(ordersCollectionRef); // Generate a new document reference *with* an ID
-      transaction.set(newOrderRef, orderData); // Set the order data
+      const newOrderRef = doc(ordersCollectionRef); // Firestore automatically generates ID
+      transaction.set(newOrderRef, orderData);
 
       // 3. Apply stock updates
       stockUpdates.forEach(update => {
           transaction.update(update.ref, { stock: update.newStock });
       });
 
-
-      return newOrderRef.id; // Return the ID of the newly created order
+      return newOrderRef.id; // Return the generated ID
     });
-
 
     console.log("Order placed successfully with ID:", orderId);
     return orderId;
 
   } catch (error) {
-    console.error("Error placing order in Firestore:", error);
-    // Handle specific errors (like stock issues) or re-throw a generic one
-    if (error instanceof Error && error.message.includes('Insufficient stock')) {
-        throw error; // Re-throw stock error to be handled by UI
+    console.error("Error placing order:", error);
+    // Re-throw specific errors or a generic one
+    if (error instanceof Error) {
+        // Check if it's a known error type (e.g., from ensureFirebaseServices or transaction)
+        if (error.message.includes('Insufficient stock') ||
+            error.message.includes('not found') ||
+            error.message.includes("Firebase services") || // Catch errors from ensureFirebaseServices
+            error.message.includes("transaction")) { // Catch potential transaction errors
+            throw error; // Re-throw specific errors
+        }
     }
-     if (error instanceof Error && error.message.includes('not found')) {
-            throw error; // Re-throw product not found error
-     }
-    throw new Error("Failed to place order. Please try again."); // Generic error
+    // Throw a more generic error for other unexpected issues
+    throw new Error("Failed to place order. Please try again later.");
   }
 }
