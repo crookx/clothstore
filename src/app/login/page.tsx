@@ -19,7 +19,7 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { LogIn, UserPlus, Chrome } from 'lucide-react'; // Added Chrome for Google Icon
+import { LogIn, UserPlus, Chrome, AlertCircle } from 'lucide-react'; // Added Chrome for Google Icon, AlertCircle
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
@@ -27,25 +27,24 @@ export default function LoginPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [authInstance, setAuthInstance] = useState<Auth | null>(null); // State for Auth instance
+  const [isFirebaseReady, setIsFirebaseReady] = useState(false); // Track Firebase readiness
   const router = useRouter();
   const { toast } = useToast();
 
   // --- Get Auth instance ---
    useEffect(() => {
-     try {
-        // Check for initialization error first
-         if (firebaseInitializationError) {
-            console.error("Login Page: Firebase initialization failed:", firebaseInitializationError);
-            setError("Authentication service unavailable. Please try again later.");
-            toast({ title: 'Error', description: 'Authentication service failed to load.', variant: 'destructive' });
-            return;
-         }
-       const { auth } = ensureFirebaseServices();
-       setAuthInstance(auth);
-     } catch (err: any) {
-       console.error("Login Page: Error getting Firebase Auth instance:", err);
-       setError("Failed to initialize authentication service.");
-        toast({ title: 'Initialization Error', description: err.message || 'Failed to load authentication.', variant: 'destructive' });
+     // Use ensureFirebaseServices to get services or null if failed
+     const services = ensureFirebaseServices();
+
+     if (services) {
+       setIsFirebaseReady(true);
+       setAuthInstance(services.auth);
+     } else {
+       // Firebase initialization failed
+       setIsFirebaseReady(false);
+       setError("Authentication service unavailable due to configuration error. Check console.");
+       console.error("Login Page: Firebase services unavailable.");
+        toast({ title: 'Error', description: 'Authentication service failed to load.', variant: 'destructive' });
      }
    }, [toast]); // Added toast dependency
 
@@ -55,7 +54,7 @@ export default function LoginPage() {
   // in your Firebase project's Authentication settings.
 
   const handleAuthAction = async (action: 'login' | 'signup') => {
-    if (!authInstance) {
+    if (!authInstance || !isFirebaseReady) { // Check readiness
        setError("Authentication service is not ready.");
        toast({ title: 'Error', description: 'Authentication service not available.', variant: 'destructive' });
        return;
@@ -95,7 +94,7 @@ export default function LoginPage() {
          case 'auth/operation-not-allowed':
               message = 'Email/Password sign-in is not enabled.';
               break;
-          // Add more specific Firebase Auth error codes as needed
+         // Add more specific Firebase Auth error codes as needed
       }
       setError(message);
       toast({ title: 'Authentication Failed', description: message, variant: 'destructive' });
@@ -106,7 +105,7 @@ export default function LoginPage() {
 
    // --- Google Sign-In Handler ---
    const handleGoogleSignIn = async () => {
-        if (!authInstance) {
+        if (!authInstance || !isFirebaseReady) { // Check readiness
            setError("Authentication service is not ready.");
            toast({ title: 'Error', description: 'Authentication service not available.', variant: 'destructive' });
            return;
@@ -143,13 +142,34 @@ export default function LoginPage() {
     <div className="container mx-auto flex min-h-[calc(100vh-theme(spacing.14))] items-center justify-center px-4 py-12">
         <Tabs defaultValue="login" className="w-full max-w-[400px]"> {/* Added max-width */}
           <TabsList className="grid w-full grid-cols-2">
-            <TabsTrigger value="login" disabled={!authInstance}><LogIn className="mr-2 h-4 w-4" /> Login</TabsTrigger>
-            <TabsTrigger value="signup" disabled={!authInstance}><UserPlus className="mr-2 h-4 w-4" /> Sign Up</TabsTrigger>
+            <TabsTrigger value="login" disabled={!isFirebaseReady}> {/* Disable if Firebase not ready */}
+                {!isFirebaseReady && <AlertCircle className="mr-2 h-4 w-4 text-destructive"/>}
+                <LogIn className="mr-2 h-4 w-4" /> Login
+            </TabsTrigger>
+            <TabsTrigger value="signup" disabled={!isFirebaseReady}> {/* Disable if Firebase not ready */}
+                 {!isFirebaseReady && <AlertCircle className="mr-2 h-4 w-4 text-destructive"/>}
+                <UserPlus className="mr-2 h-4 w-4" /> Sign Up
+            </TabsTrigger>
           </TabsList>
+
+           {/* Display overall error if Firebase isn't ready */}
+           {!isFirebaseReady && (
+               <Card className="mt-4 border-destructive">
+                   <CardHeader>
+                       <CardTitle className="text-destructive flex items-center">
+                           <AlertCircle className="mr-2 h-5 w-5"/> Configuration Error
+                       </CardTitle>
+                   </CardHeader>
+                    <CardContent>
+                       <p className="text-sm text-destructive-foreground">Authentication is unavailable because Firebase failed to initialize. Please check the browser console for details and fix your <code>.env.local</code> configuration.</p>
+                   </CardContent>
+               </Card>
+           )}
+
 
           {/* Login Tab */}
           <TabsContent value="login">
-             <Card>
+             <Card className={!isFirebaseReady ? 'opacity-50 pointer-events-none' : ''}> {/* Dim if not ready */}
                <CardHeader>
                  <CardTitle>Login to AstraBaby</CardTitle>
                  <CardDescription>Access your account and order history.</CardDescription>
@@ -164,7 +184,7 @@ export default function LoginPage() {
                      value={email}
                      onChange={(e) => setEmail(e.target.value)}
                      required
-                     disabled={isLoading || !authInstance}
+                     disabled={isLoading || !isFirebaseReady}
                    />
                  </div>
                  <div className="space-y-2">
@@ -176,17 +196,17 @@ export default function LoginPage() {
                      value={password}
                      onChange={(e) => setPassword(e.target.value)}
                      required
-                     disabled={isLoading || !authInstance}
+                     disabled={isLoading || !isFirebaseReady}
                    />
                  </div>
                  {error && <p className="text-sm text-destructive">{error}</p>}
                </CardContent>
                <CardFooter className="flex flex-col gap-4">
-                  <Button onClick={() => handleAuthAction('login')} className="w-full" disabled={isLoading || !authInstance}>
+                  <Button onClick={() => handleAuthAction('login')} className="w-full" disabled={isLoading || !isFirebaseReady}>
                      {isLoading ? 'Logging In...' : 'Login'}
                   </Button>
                  <Separator className="my-2" />
-                 <Button variant="outline" onClick={handleGoogleSignIn} className="w-full" disabled={isLoading || !authInstance}>
+                 <Button variant="outline" onClick={handleGoogleSignIn} className="w-full" disabled={isLoading || !isFirebaseReady}>
                     <Chrome className="mr-2 h-4 w-4" /> {isLoading ? 'Processing...' : 'Sign in with Google'}
                   </Button>
                   {/* Add other OAuth providers here */}
@@ -196,7 +216,7 @@ export default function LoginPage() {
 
           {/* Signup Tab */}
           <TabsContent value="signup">
-               <Card>
+               <Card className={!isFirebaseReady ? 'opacity-50 pointer-events-none' : ''}> {/* Dim if not ready */}
                  <CardHeader>
                    <CardTitle>Create Account</CardTitle>
                    <CardDescription>Join AstraBaby to start shopping.</CardDescription>
@@ -211,7 +231,7 @@ export default function LoginPage() {
                        value={email}
                        onChange={(e) => setEmail(e.target.value)}
                        required
-                       disabled={isLoading || !authInstance}
+                       disabled={isLoading || !isFirebaseReady}
                      />
                    </div>
                    <div className="space-y-2">
@@ -223,17 +243,17 @@ export default function LoginPage() {
                        value={password}
                        onChange={(e) => setPassword(e.target.value)}
                        required
-                       disabled={isLoading || !authInstance}
+                       disabled={isLoading || !isFirebaseReady}
                      />
                    </div>
                     {error && <p className="text-sm text-destructive">{error}</p>}
                  </CardContent>
                  <CardFooter className="flex flex-col gap-4">
-                     <Button onClick={() => handleAuthAction('signup')} className="w-full" disabled={isLoading || !authInstance}>
+                     <Button onClick={() => handleAuthAction('signup')} className="w-full" disabled={isLoading || !isFirebaseReady}>
                         {isLoading ? 'Creating Account...' : 'Sign Up'}
                      </Button>
                     <Separator className="my-2" />
-                    <Button variant="outline" onClick={handleGoogleSignIn} className="w-full" disabled={isLoading || !authInstance}>
+                    <Button variant="outline" onClick={handleGoogleSignIn} className="w-full" disabled={isLoading || !isFirebaseReady}>
                        <Chrome className="mr-2 h-4 w-4" /> {isLoading ? 'Processing...' : 'Sign up with Google'}
                      </Button>
                       {/* Add other OAuth providers here */}

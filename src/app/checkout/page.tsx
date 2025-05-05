@@ -9,13 +9,14 @@ import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
 import Image from 'next/image';
 import Link from 'next/link';
-import { CreditCard, Truck, LogIn, User as UserIcon } from 'lucide-react'; // Added LogIn, UserIcon
+import { CreditCard, Truck, LogIn, User as UserIcon, AlertCircle } from 'lucide-react'; // Added LogIn, UserIcon, AlertCircle
 import { useToast } from '@/hooks/use-toast';
 import { useRouter } from 'next/navigation';
 import { useState, useEffect } from 'react';
 import { placeOrder } from '@/services/orderService'; // Import the order service
 import { ensureFirebaseServices, firebaseInitializationError } from '@/lib/firebase/config'; // Import ensureFirebaseServices and error state
 import { onAuthStateChanged, User, Auth } from 'firebase/auth'; // Import auth state listener and User type, Auth type
+import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert'; // Import Alert
 
 export default function CheckoutPage() {
   const { cart, clearCart } = useCart();
@@ -25,32 +26,32 @@ export default function CheckoutPage() {
   const [currentUser, setCurrentUser] = useState<User | null>(null); // State for authenticated user
   const [authLoading, setAuthLoading] = useState(true); // State for auth loading
   const [authInstance, setAuthInstance] = useState<Auth | null>(null); // State to hold Auth instance
+  const [isFirebaseReady, setIsFirebaseReady] = useState(false); // Track Firebase readiness
 
 
   // --- Listen for Authentication State Changes ---
   useEffect(() => {
      let unsubscribe: (() => void) | null = null;
-     try {
-         // Check for initialization error first
-         if (firebaseInitializationError) {
-            console.error("Checkout: Firebase initialization failed:", firebaseInitializationError);
-            toast({ title: "Authentication Error", description: "Could not load user information.", variant: "destructive" });
-            setAuthLoading(false);
-            return;
-         }
+     // Use ensureFirebaseServices to get services or null if failed
+     const services = ensureFirebaseServices();
 
-         const { auth } = ensureFirebaseServices();
-         setAuthInstance(auth); // Store auth instance
+     if (services) {
+        setIsFirebaseReady(true);
+        const { auth } = services;
+        setAuthInstance(auth); // Store auth instance
 
          unsubscribe = onAuthStateChanged(auth, (user) => {
            setCurrentUser(user);
            setAuthLoading(false); // Auth state determined
          });
-     } catch (error) {
-         console.error("Checkout: Error getting Firebase Auth instance:", error);
-         toast({ title: "Error", description: "Failed to check authentication status.", variant: "destructive" });
-         setAuthLoading(false);
+     } else {
+         // Firebase initialization failed
+         setIsFirebaseReady(false);
+         setAuthLoading(false); // No point waiting for auth state
+         console.error("Checkout: Firebase services unavailable.");
+          toast({ title: "Configuration Error", description: "Could not load user information or process order.", variant: "destructive" });
      }
+
      // Cleanup subscription on unmount
      return () => {
        if (unsubscribe) {
@@ -69,17 +70,13 @@ export default function CheckoutPage() {
 
   const handlePlaceOrder = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    setIsLoading(true);
 
-    // --- Comment for User: Authentication Check ---
-    // You might want to enforce login before checkout, or allow guest checkout.
-    // Currently, it allows guest checkout but associates the order with the user if logged in.
-    // if (!currentUser) {
-    //   toast({ title: "Please Log In", description: "You need to be logged in to place an order.", variant: "destructive" });
-    //   setIsLoading(false);
-    //   // Optionally redirect to login page: router.push('/login');
-    //   return;
-    // }
+     if (!isFirebaseReady) {
+        toast({ title: "Cannot Place Order", description: "Service unavailable due to configuration error.", variant: "destructive" });
+        return;
+     }
+
+    setIsLoading(true);
 
     const formData = new FormData(event.currentTarget);
     const shippingInfo = {
@@ -92,24 +89,8 @@ export default function CheckoutPage() {
       email: formData.get('email') as string,
     };
 
-    // --- Comment for User: Payment Gateway Integration ---
-    // This is where you would integrate your payment gateway (e.g., Stripe).
-    // 1. Create a payment intent on your server.
-    // 2. Collect payment details using Stripe Elements or similar.
-    // 3. Confirm the payment intent on the client.
-    // 4. If payment is successful, then proceed to place the order in Firestore.
-    //
-    // const paymentIntentId = await processPayment(formData.get('cardNumber'), ...); // Placeholder
-    // if (!paymentIntentId) {
-    //   toast({ title: "Payment Failed", description: "Could not process payment.", variant: "destructive" });
-    //   setIsLoading(false);
-    //   return;
-    // }
-    // --- End Payment Gateway Placeholder ---
-
 
     try {
-       // Pass the current user to the placeOrder function
       const orderId = await placeOrder(
         shippingInfo,
         cart,
@@ -117,30 +98,22 @@ export default function CheckoutPage() {
         shippingCost,
         tax,
         total,
-        // paymentIntentId, // Pass payment ID if using a gateway
-        currentUser // Pass the user object
+        currentUser
       );
 
       console.log('Order placed successfully with ID:', orderId); // Log for debugging
-
-      // Clear the cart *after* successful order placement
       clearCart();
-
-      // Show success toast
       toast({
         title: "Order Placed Successfully!",
         description: `Thank you! Your order #${orderId.substring(0, 6)} is being processed.`, // Show partial ID
         variant: 'default',
       });
-
-      // Redirect to a confirmation page or home
-      router.push(`/order-confirmation?id=${orderId}`); // Redirect to confirmation page with ID
+      router.push(`/order-confirmation?id=${orderId}`);
 
     } catch (error) {
       console.error("Order placement failed:", error);
       toast({
         title: "Order Failed",
-        // Display specific error messages if available (e.g., stock issues)
         description: error instanceof Error ? error.message : "An unexpected error occurred. Please try again.",
         variant: "destructive",
       });
@@ -156,8 +129,37 @@ export default function CheckoutPage() {
       }
     }, [cart, isLoading, router]);
 
+   // Show loading indicator while checking auth state OR if firebase isn't ready
+   if (authLoading) {
+     return (
+        <div className="container mx-auto px-4 py-8 text-center">
+           <p className="text-muted-foreground">Loading checkout...</p>
+           {/* Optional: Add a spinner here */}
+        </div>
+     );
+   }
+
+
+   // Display error if Firebase is not ready
+   if (!isFirebaseReady) {
+       return (
+           <div className="container mx-auto px-4 py-8">
+               <h1 className="text-3xl font-bold text-primary mb-6">Checkout</h1>
+               <Alert variant="destructive">
+                   <AlertCircle className="h-4 w-4" />
+                   <AlertTitle>Configuration Error</AlertTitle>
+                   <AlertDescription>
+                       Checkout is currently unavailable because the connection to our services failed.
+                       Please ensure your <code>.env.local</code> configuration is correct and try again later.
+                   </AlertDescription>
+               </Alert>
+                <Button onClick={() => router.push('/')} className="mt-4">Return to Shop</Button>
+           </div>
+       );
+   }
+
+    // If cart becomes empty after initial load (e.g., user clears it in another tab)
    if (cart.length === 0) {
-        // Don't render the form if cart is empty or redirecting
        return (
             <div className="container mx-auto px-4 py-8 text-center">
                 <p className="text-muted-foreground">Your cart is empty. Redirecting...</p>
@@ -166,30 +168,18 @@ export default function CheckoutPage() {
    }
 
 
-  // Show loading indicator while checking auth state
-  if (authLoading) {
-     return (
-        <div className="container mx-auto px-4 py-8 text-center">
-           <p className="text-muted-foreground">Loading user information...</p>
-           {/* Optional: Add a spinner here */}
-        </div>
-     );
-   }
-
-
   return (
     <div className="container mx-auto px-4 py-8">
         <div className="flex justify-between items-center mb-8">
            <h1 className="text-3xl font-bold text-primary">Checkout</h1>
-            {/* --- User Auth Display/Link --- */}
            <div>
              {currentUser ? (
                  <span className="text-sm text-muted-foreground flex items-center">
                    <UserIcon className="mr-2 h-4 w-4"/> Logged in as {currentUser.email || currentUser.displayName || 'User'}
                  </span>
               ) : (
-                <Link href="/login" passHref> {/* --- Comment: Create /login page --- */}
-                   <Button variant="outline">
+                <Link href="/login" passHref>
+                   <Button variant="outline" disabled={!isFirebaseReady}> {/* Disable if Firebase not ready */}
                        <LogIn className="mr-2 h-4 w-4" /> Log In / Sign Up
                    </Button>
                  </Link>
@@ -208,34 +198,33 @@ export default function CheckoutPage() {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <Label htmlFor="firstName">First Name</Label>
-                  <Input id="firstName" name="firstName" required placeholder="Astra" />
+                  <Input id="firstName" name="firstName" required placeholder="Astra" disabled={isLoading} />
                 </div>
                 <div>
                   <Label htmlFor="lastName">Last Name</Label>
-                  <Input id="lastName" name="lastName" required placeholder="Baby" />
+                  <Input id="lastName" name="lastName" required placeholder="Baby" disabled={isLoading}/>
                 </div>
               </div>
               <div>
                 <Label htmlFor="address">Address</Label>
-                <Input id="address" name="address" required placeholder="123 Starship Lane" />
+                <Input id="address" name="address" required placeholder="123 Starship Lane" disabled={isLoading}/>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div>
                   <Label htmlFor="city">City</Label>
-                  <Input id="city" name="city" required placeholder="Galaxy City" />
+                  <Input id="city" name="city" required placeholder="Galaxy City" disabled={isLoading}/>
                 </div>
                 <div>
                   <Label htmlFor="state">State/Province</Label>
-                  <Input id="state" name="state" required placeholder="Cosmos" />
+                  <Input id="state" name="state" required placeholder="Cosmos" disabled={isLoading}/>
                 </div>
                 <div>
                   <Label htmlFor="zip">ZIP/Postal Code</Label>
-                  <Input id="zip" name="zip" required placeholder="98765" />
+                  <Input id="zip" name="zip" required placeholder="98765" disabled={isLoading}/>
                 </div>
               </div>
               <div>
                 <Label htmlFor="email">Email Address</Label>
-                 {/* Pre-fill email if user is logged in, make it read-only? */}
                  <Input
                     id="email"
                     name="email"
@@ -243,24 +232,18 @@ export default function CheckoutPage() {
                     required
                     placeholder="you@example.com"
                     defaultValue={currentUser?.email || ''}
-                    // readOnly={!!currentUser?.email} // Optional: Prevent editing if logged in
+                    disabled={isLoading}
                  />
                </div>
             </CardContent>
           </Card>
 
-           {/* --- Payment Section (Commented Out/Placeholder) --- */}
            <Card className="shadow-sm hover:shadow-md transition-shadow duration-300 opacity-50 cursor-not-allowed">
              <CardHeader>
                <CardTitle className="flex items-center text-primary"><CreditCard className="mr-2 h-5 w-5" /> Payment Details</CardTitle>
                <CardDescription>Payment gateway integration is pending.</CardDescription>
              </CardHeader>
              <CardContent className="space-y-4">
-                 {/* --- Comment for User: Payment Gateway Elements ---
-                 This section should be replaced by your payment gateway's
-                 UI elements (e.g., Stripe Card Element). For now, it's disabled.
-                 Remove the 'opacity-50 cursor-not-allowed' from the Card above when implemented.
-                 --- */}
                <div>
                  <Label htmlFor="cardNumber">Card Number</Label>
                  <Input id="cardNumber" name="cardNumber" placeholder="**** **** **** 1234" disabled />
@@ -277,7 +260,6 @@ export default function CheckoutPage() {
                </div>
              </CardContent>
            </Card>
-           {/* --- End Payment Section Placeholder --- */}
         </div>
 
         {/* Order Summary */}
@@ -297,7 +279,6 @@ export default function CheckoutPage() {
                              layout="fill"
                              objectFit="cover"
                              className="rounded"
-                              // Enhanced AI Hint: Added 'checkout summary' context
                              data-ai-hint={`${item.category.toLowerCase()} checkout summary`}
                            />
                          </div>
@@ -327,12 +308,11 @@ export default function CheckoutPage() {
               </div>
             </CardContent>
             <CardFooter>
-                {/* --- Comment for User: Disable button until payment implemented --- */}
               <Button
                  type="submit"
                  size="lg"
                  className="w-full bg-accent hover:bg-accent/90 text-accent-foreground"
-                 disabled={isLoading /* || !isPaymentReady */} // Add payment readiness check
+                 disabled={isLoading || !isFirebaseReady /* || !isPaymentReady */} // Disable if loading or Firebase error
                  >
                  {isLoading ? 'Processing...' : 'Place Order (Payment Pending)'}
                </Button>

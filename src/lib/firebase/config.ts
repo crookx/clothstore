@@ -38,11 +38,11 @@ let firebaseInitializationError: Error | null = null; // Store initialization er
 const missingEnvVars = firebaseEnvVarKeys.filter(key => {
     const value = process.env[key];
     // Check if the value is missing, empty, or still a placeholder
-    return !value || value.startsWith('YOUR_') || value.includes('XXX') || value === "";
+    return !value || value.startsWith('YOUR_') || value.includes('XXX') || value === "" || value === "YOUR_PROJECT_ID_HERE"; // Added check for specific placeholder
 });
 
 if (missingEnvVars.length > 0) {
-    const simpleMissingKeys = missingEnvVars.map(key => key.replace('NEXT_PUBLIC_', '')); // Show simpler names in error
+    const simpleMissingKeys = missingEnvVars.map(key => key.replace('NEXT_PUBLIC_FIREBASE_', '')); // Show simpler names in error
     const errorMessage =
         `🔴 FATAL ERROR: Missing or placeholder Firebase environment variables: ${simpleMissingKeys.join(', ')}. ` +
         `\n\n➡️ Please take the following steps:\n` +
@@ -52,13 +52,11 @@ if (missingEnvVars.length > 0) {
 
     firebaseInitializationError = new Error(errorMessage); // Store the error
 
-    // Log the error but don't throw immediately, especially on client
-    console.error(errorMessage); // Server console log
+    // Log detailed error message to the server console AND client console (if possible)
+    console.error(errorMessage); // Server console
     if (typeof window !== 'undefined') {
-         console.error(errorMessage); // Client console log
+         console.error(errorMessage); // Client console
     }
-    // No need to throw here, ensureFirebaseServices will handle it
-
 } else {
     // --- Initialize Firebase App (Only if no config errors) ---
     try {
@@ -74,10 +72,9 @@ if (missingEnvVars.length > 0) {
         auth = getAuth(app);
         db = getFirestore(app);
         storage = getStorage(app);
-        console.log("Firebase Auth, Firestore, and Storage services obtained.");
+        // console.log("Firebase Auth, Firestore, and Storage services obtained."); // Less verbose
 
         // --- Connect to Emulators (Optional - Development Only) ---
-        // This part remains the same, assuming NEXT_PUBLIC_USE_FIREBASE_EMULATOR is handled correctly
         const useEmulator = process.env.NEXT_PUBLIC_USE_FIREBASE_EMULATOR === 'true';
         if (useEmulator && typeof window !== 'undefined' && !(globalThis as any).__firebase_emulators_connected) {
             (globalThis as any).__firebase_emulators_connected = true;
@@ -88,7 +85,6 @@ if (missingEnvVars.length > 0) {
                 connectStorageEmulator(storage, "localhost", 9199);
                 console.log("✅ Attempted connection to Auth, Firestore, and Storage Emulators.");
             } catch (emulatorError: any) {
-                // Handle specific emulator connection issues
                 console.warn("Emulator connection issue (might be expected):", emulatorError.message);
             }
         }
@@ -103,22 +99,29 @@ if (missingEnvVars.length > 0) {
 
 // --- Function to Ensure Services are Ready ---
 // This function acts as a gatekeeper. Code needing Firebase services should call this first.
-export const ensureFirebaseServices = () => {
-    // If an error occurred during initialization (config or service level), throw it now.
+// It returns the services if successful, or null if there was an initialization error.
+export const ensureFirebaseServices = (): {
+    app: ReturnType<typeof initializeApp>;
+    auth: Auth;
+    db: Firestore;
+    storage: FirebaseStorage;
+} | null => {
+    // If an error occurred during initialization (config or service level), return null.
     if (firebaseInitializationError) {
-        // Throw the actual error object that was stored
-        throw firebaseInitializationError;
+        // Error is already logged in the console during the check
+        return null;
     }
     // Double-check if services are somehow undefined even without an error flag
     if (!app || !auth || !db || !storage) {
          // Set the error state now if it wasn't caught before
          firebaseInitializationError = new Error("Firebase services are unexpectedly unavailable after initialization attempt.");
          console.error(firebaseInitializationError.message);
-         throw firebaseInitializationError;
+         return null;
     }
     // Return the initialized services if everything is okay
     return { app, auth, db, storage };
 };
 
 // Export the error state itself for potential conditional rendering or logging elsewhere
+// This allows components to check if initialization failed without calling ensureFirebaseServices
 export { firebaseInitializationError };

@@ -10,16 +10,18 @@ import { collection, getDocs, query, limit, DocumentData, QueryDocumentSnapshot 
  * matches the Product interface structure.
  *
  * @param count - The maximum number of products to fetch. Defaults to 20.
- * @returns A promise that resolves to an array of Product objects.
- * @throws Throws an error if fetching fails or Firebase services are not initialized.
+ * @returns A promise that resolves to an array of Product objects, or null if Firebase services are unavailable.
+ * @throws Throws an error if fetching fails (but not if Firebase init failed).
  */
-export async function fetchProducts(count: number = 20): Promise<Product[]> {
-  let db;
-  try {
-    // Get Firestore instance, this will throw if initialization failed
-    const services = ensureFirebaseServices();
-    db = services.db;
+export async function fetchProducts(count: number = 20): Promise<Product[] | null> { // Return type updated
+  const services = ensureFirebaseServices();
+  if (!services) {
+    console.error("fetchProducts: Firebase services are unavailable.");
+    return null; // Return null if Firebase initialization failed
+  }
+  const { db } = services;
 
+  try {
     const productsCollectionRef = collection(db, 'products');
     const q = query(productsCollectionRef, limit(count));
     const querySnapshot = await getDocs(q);
@@ -39,10 +41,10 @@ export async function fetchProducts(count: number = 20): Promise<Product[]> {
 
     return products;
   } catch (error) {
-    console.error("Error fetching products:", error);
-    // If ensureFirebaseServices threw, the error will be specific
-    // Otherwise, it's likely a Firestore query error
-    // Return empty array to prevent breaking the UI, but log the error
-    return [];
+    // Log Firestore query errors specifically
+    console.error("Error fetching products from Firestore:", error);
+    // Throw the error for the calling component to potentially handle differently
+    // than the initialization error.
+    throw new Error(`Failed to fetch products from Firestore. Original error: ${error instanceof Error ? error.message : String(error)}`);
   }
 }

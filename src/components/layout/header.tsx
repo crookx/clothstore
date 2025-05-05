@@ -2,7 +2,7 @@
 'use client';
 
 import Link from 'next/link';
-import { ShoppingCart, Package, LogIn, LogOut, User as UserIcon } from 'lucide-react'; // Added LogIn, LogOut, UserIcon
+import { ShoppingCart, Package, LogIn, LogOut, User as UserIcon, AlertCircle } from 'lucide-react'; // Added LogIn, LogOut, UserIcon, AlertCircle
 import { Button } from '@/components/ui/button';
 import { useCart } from '@/context/cart-context';
 import { Badge } from '@/components/ui/badge';
@@ -20,6 +20,7 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"; // Import Avatar components
 import { useToast } from '@/hooks/use-toast';
 import { useRouter } from 'next/navigation';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'; // Import Tooltip
 
 
 export default function Header() {
@@ -28,6 +29,7 @@ export default function Header() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [authInstance, setAuthInstance] = useState<Auth | null>(null); // State to hold the Auth instance
+  const [isFirebaseReady, setIsFirebaseReady] = useState(false); // Track Firebase readiness
   const { toast } = useToast();
   const router = useRouter();
 
@@ -41,29 +43,30 @@ export default function Header() {
    useEffect(() => {
     let unsubscribe: (() => void) | null = null;
 
-    try {
-      // Check for initialization error first
-      if (firebaseInitializationError) {
-        console.error("Header: Firebase initialization failed:", firebaseInitializationError);
-        setAuthLoading(false);
-        return;
-      }
+    // Use ensureFirebaseServices to get services or null if failed
+    const services = ensureFirebaseServices();
 
-      const { auth } = ensureFirebaseServices();
+    if (services) {
+      setIsFirebaseReady(true);
+      const { auth } = services;
       setAuthInstance(auth); // Store the auth instance
 
       unsubscribe = onAuthStateChanged(auth, (user) => {
         setCurrentUser(user);
         setAuthLoading(false); // Auth state determined
       });
-    } catch (error) {
-        console.error("Header: Error getting Firebase Auth instance:", error);
-        toast({
-           title: 'Authentication Error',
-           description: 'Could not initialize authentication. Please refresh.',
-           variant: 'destructive',
-        });
-        setAuthLoading(false);
+    } else {
+      // Firebase initialization failed
+      setIsFirebaseReady(false);
+      setAuthLoading(false); // No point waiting for auth state
+      console.error("Header: Firebase services unavailable.");
+      // Optionally show a persistent warning toast
+      // toast({
+      //    title: 'Configuration Error',
+      //    description: 'Firebase services could not be initialized. Some features might be unavailable.',
+      //    variant: 'destructive',
+      //    duration: Infinity, // Keep it visible
+      // });
     }
 
      // Cleanup subscription on unmount
@@ -72,7 +75,8 @@ export default function Header() {
             unsubscribe();
         }
      };
-   }, [toast]); // Added toast to dependency array
+   // eslint-disable-next-line react-hooks/exhaustive-deps
+   }, []); // Run only once on mount
 
    // Handle Logout
    const handleLogout = async () => {
@@ -116,8 +120,22 @@ export default function Header() {
           </Link>
 
           {/* Auth Button/Dropdown */}
-          {authLoading ? (
-             // Optional: Show a loading indicator while checking auth
+          {!isFirebaseReady ? (
+             // Firebase failed to initialize
+             <TooltipProvider>
+                 <Tooltip>
+                    <TooltipTrigger asChild>
+                        <Button variant="ghost" size="icon" disabled className="cursor-not-allowed">
+                            <AlertCircle className="h-5 w-5 text-destructive" />
+                        </Button>
+                    </TooltipTrigger>
+                     <TooltipContent>
+                        <p className="text-xs text-destructive-foreground bg-destructive p-1 rounded">Firebase Error</p>
+                    </TooltipContent>
+                 </Tooltip>
+             </TooltipProvider>
+          ) : authLoading ? (
+             // Show a loading indicator while checking auth
              <Button variant="ghost" size="icon" disabled>
                 <UserIcon className="h-5 w-5 animate-pulse text-muted-foreground" />
              </Button>
@@ -127,7 +145,6 @@ export default function Header() {
                  <DropdownMenuTrigger asChild>
                     <Button variant="ghost" className="relative h-8 w-8 rounded-full">
                        <Avatar className="h-8 w-8">
-                          {/* --- Comment: Add user photoURL if available --- */}
                          <AvatarImage src={currentUser.photoURL || undefined} alt={currentUser.displayName || currentUser.email || 'User'} />
                          <AvatarFallback>{getInitials(currentUser.email)}</AvatarFallback>
                        </Avatar>
@@ -145,7 +162,6 @@ export default function Header() {
                      </div>
                    </DropdownMenuLabel>
                    <DropdownMenuSeparator />
-                   {/* --- Comment: Add links to user profile or order history pages --- */}
                    {/* <DropdownMenuItem onClick={() => router.push('/profile')}>
                      <UserIcon className="mr-2 h-4 w-4" />
                      <span>Profile</span>
