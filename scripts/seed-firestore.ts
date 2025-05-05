@@ -12,6 +12,7 @@
  *     - Paste the copied JSON content into the `SERVICE_ACCOUNT_KEY_JSON` variable in your `.env.local` file,
  *       replacing the placeholder `'PASTE_YOUR_SERVICE_ACCOUNT_KEY_JSON_CONTENT_HERE'`.
  *       Ensure the pasted content is enclosed in single quotes and is valid JSON.
+ *       **CRITICAL for `.env.local`:** Inside the pasted JSON string, replace all newline characters (`\n`) within the `private_key` field with the literal string `\\n`.
  * 3.  Install Dependencies:
  *     - Run `npm install` or `yarn install` in your project root if you haven't already (to install `firebase-admin`, `tsx`, `dotenv-cli`).
  * 4.  Run the Script:
@@ -40,7 +41,7 @@ if (!PROJECT_ID || PROJECT_ID === "YOUR_PROJECT_ID_HERE") {
   const errorMessage =
     `❌ Configuration Error:\n` +
     ` Error: NEXT_PUBLIC_FIREBASE_PROJECT_ID environment variable not set or still has the placeholder value. ` +
-    `Please ensure it is set correctly in your .env.local file and you have replaced "YOUR_PROJECT_ID_HERE" with your actual Firebase Project ID.\n`;
+    `Please ensure it is set correctly in your .env.local file and you have replaced "YOUR_PROJECT_ID_HERE" with your actual Firebase Project ID. Remember to restart your terminal or source your profile if you set it globally. \n`;
   console.error(errorMessage);
   process.exit(1); // Exit if the crucial Project ID is missing or is the placeholder
 }
@@ -49,11 +50,12 @@ if (!PROJECT_ID || PROJECT_ID === "YOUR_PROJECT_ID_HERE") {
 // --- Initialize Firebase Admin SDK ---
 try {
     // Check if SERVICE_ACCOUNT_KEY_JSON is set and not the placeholder
-    if (!SERVICE_ACCOUNT_JSON_STRING || SERVICE_ACCOUNT_JSON_STRING === 'PASTE_YOUR_SERVICE_ACCOUNT_KEY_JSON_CONTENT_HERE') {
+    if (!SERVICE_ACCOUNT_JSON_STRING || SERVICE_ACCOUNT_JSON_STRING.includes('PASTE_YOUR_SERVICE_ACCOUNT_KEY_JSON_CONTENT_HERE')) {
         console.error("\n❌ Configuration Error:");
         console.error("SERVICE_ACCOUNT_KEY_JSON environment variable is not set correctly in your .env.local file.");
         console.error("Please open your downloaded serviceAccountKey.json file, copy its content,");
-        console.error("and paste it between the single quotes for SERVICE_ACCOUNT_KEY_JSON in .env.local.\n");
+        console.error("and paste it between the single quotes for SERVICE_ACCOUNT_KEY_JSON in .env.local.");
+        console.error("Ensure newline characters ('\\n') within the 'private_key' field are replaced with the literal string '\\\\n'.\n");
         process.exit(1);
     }
 
@@ -64,7 +66,8 @@ try {
     } catch (parseError) {
         console.error("\n❌ Configuration Error:");
         console.error("Failed to parse the SERVICE_ACCOUNT_KEY_JSON value from .env.local.");
-        console.error("Please ensure the content pasted from your serviceAccountKey.json file is valid JSON and enclosed in single quotes.");
+        console.error("Please ensure the content pasted from your serviceAccountKey.json file is valid JSON and");
+        console.error("that newline characters ('\\n') within the 'private_key' field are correctly escaped as '\\\\n'.");
         console.error("Parsing Error:", parseError, "\n");
         process.exit(1);
     }
