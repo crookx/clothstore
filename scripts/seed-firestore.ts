@@ -5,7 +5,6 @@
  * How to run:
  * 1.  Ensure you have a `.env.local` file in your project root with your
  *     Firebase configuration variables (e.g., NEXT_PUBLIC_FIREBASE_PROJECT_ID).
- *     **REPLACE THE PLACEHOLDER VALUES in `.env.local` with your actual Firebase credentials.**
  * 2.  Get Service Account Credentials:
  *     - Go to your Firebase Project Settings > Service accounts.
  *     - Click "Generate new private key" and download the JSON file.
@@ -17,9 +16,10 @@
  *     - Run `npm install` or `yarn install` in your project root if you haven't already (to install `firebase-admin`, `tsx`, `dotenv-cli`).
  * 4.  Run the Script:
  *     - Execute the script from your project root using: `npm run seed:firestore`
+ *       (The `dotenv-cli` package automatically loads variables from `.env.local` for this script)
  *
  * This script will:
- * - Connect to your Firestore database using Admin privileges.
+ * - Connect to your Firestore database using Admin privileges derived from the SERVICE_ACCOUNT_KEY_JSON.
  * - Add sample product data using batch writes.
  * - **By default, it DOES NOT clear existing data.** Uncomment the `clearCollection` line if you want to wipe the collection first.
  */
@@ -38,24 +38,11 @@ const BATCH_SIZE = 100; // Firestore batch write limit is 500 operations
 // --- Environment Variable Validation ---
 if (!PROJECT_ID || PROJECT_ID === "YOUR_PROJECT_ID_HERE") {
   const errorMessage =
-    `Error: NEXT_PUBLIC_FIREBASE_PROJECT_ID environment variable not set or still has the placeholder value. ` +
-    `Please ensure it is set correctly in your .env.local file and you have replaced "YOUR_PROJECT_ID_HERE" with your actual Firebase Project ID. `;
-  console.error("\n❌ Configuration Error:\n", errorMessage, "\n");
+    `❌ Configuration Error:\n` +
+    ` Error: NEXT_PUBLIC_FIREBASE_PROJECT_ID environment variable not set or still has the placeholder value. ` +
+    `Please ensure it is set correctly in your .env.local file and you have replaced "YOUR_PROJECT_ID_HERE" with your actual Firebase Project ID.\n`;
+  console.error(errorMessage);
   process.exit(1); // Exit if the crucial Project ID is missing or is the placeholder
-}
-
-// Validate other required environment variables if needed by the admin SDK indirectly
-const requiredEnvVarsForAdmin = [
-  // Add other NEXT_PUBLIC_ vars if the *admin* SDK specifically needs them, which is unlikely
-];
-const missingEnvVars = requiredEnvVarsForAdmin.filter((key) => !process.env[key]);
-
-if (missingEnvVars.length > 0) {
-  const errorMessage =
-    `Missing other required environment variables for seeding script: ${missingEnvVars.join(', ')}. ` +
-    `Please ensure they are set in your .env.local file.`;
-  console.error("Error:", errorMessage);
-  process.exit(1); // Exit if required variables are missing
 }
 
 
@@ -117,7 +104,14 @@ const sampleProducts: Omit<Product, 'id'>[] = [
     { name: "Pulsar Reversible Seat Stroller", description: "Parent-facing or world-facing options.", price: 19800, category: "Strollers", imageUrl: "https://picsum.photos/seed/stroller8/400/300", stock: 18 },
     { name: "Quasar City Mini Stroller", description: "Lightweight and agile for urban environments.", price: 16500, category: "Strollers", imageUrl: "https://picsum.photos/seed/stroller9/400/300", stock: 22 },
     { name: "Zenith Luxury Stroller", description: "Premium materials and enhanced suspension.", price: 35000, category: "Strollers", imageUrl: "https://picsum.photos/seed/stroller10/400/300", stock: 7 },
-    // ... (Add 40 more stroller variations)
+    { name: "Stellar Basic Stroller", description: "Affordable and reliable everyday stroller.", price: 9500, category: "Strollers", imageUrl: "https://picsum.photos/seed/stroller11/400/300", stock: 30 },
+    { name: "Comet Tandem Stroller", description: "Inline seating for two children.", price: 34000, category: "Strollers", imageUrl: "https://picsum.photos/seed/stroller12/400/300", stock: 4 },
+    { name: "Andromeda Umbrella Stroller", description: "Extremely lightweight and simple fold.", price: 7000, category: "Strollers", imageUrl: "https://picsum.photos/seed/stroller13/400/300", stock: 40 },
+    { name: "Voyager 3-Wheel Stroller", description: "Sporty design with enhanced maneuverability.", price: 23000, category: "Strollers", imageUrl: "https://picsum.photos/seed/stroller14/400/300", stock: 9 },
+    { name: "Nova Bassinet Stroller Combo", description: "Includes detachable bassinet for newborns.", price: 27500, category: "Strollers", imageUrl: "https://picsum.photos/seed/stroller15/400/300", stock: 11 },
+     // ...(Continue adding 35 more unique stroller entries)
+
+    // == Car Seats (Target: 50) ==
     { name: "StarHopper Infant Car Seat", description: "Rear-facing safety for newborns.", price: 9500, category: "Car Seats", imageUrl: "https://picsum.photos/seed/carseat1/400/300", stock: 30 },
     { name: "Orbit Shield Convertible Car Seat", description: "Grows with your child, forward & rear-facing.", price: 15500, category: "Car Seats", imageUrl: "https://picsum.photos/seed/carseat2/400/300", stock: 18 },
     { name: "Comet Booster Seat", description: "High-back booster for older kids.", price: 7000, category: "Car Seats", imageUrl: "https://picsum.photos/seed/carseat3/400/300", stock: 22 },
@@ -128,7 +122,12 @@ const sampleProducts: Omit<Product, 'id'>[] = [
     { name: "Starlight Isofix Base", description: "Secure Isofix installation for compatible seats.", price: 8000, category: "Car Seats", imageUrl: "https://picsum.photos/seed/carseat8/400/300", stock: 12 },
     { name: "Cosmic Comfort Convertible Seat", description: "Extra padding for long journeys.", price: 17000, category: "Car Seats", imageUrl: "https://picsum.photos/seed/carseat9/400/300", stock: 16 },
     { name: "Voyager Travel Car Seat", description: "Lightweight and airline-approved.", price: 13500, category: "Car Seats", imageUrl: "https://picsum.photos/seed/carseat10/400/300", stock: 20 },
-    // ... (Add 40 more car seat variations)
+    { name: "Pulsar SlimFit Car Seat", description: "Space-saving design for fitting multiple seats.", price: 19000, category: "Car Seats", imageUrl: "https://picsum.photos/seed/carseat11/400/300", stock: 14 },
+    { name: "Quasar Extended Rear-Facing Seat", description: "Allows rear-facing for longer.", price: 18000, category: "Car Seats", imageUrl: "https://picsum.photos/seed/carseat12/400/300", stock: 11 },
+    { name: "Zenith Pro Booster with Latch", description: "High-back booster with secure Latch system.", price: 9000, category: "Car Seats", imageUrl: "https://picsum.photos/seed/carseat13/400/300", stock: 19 },
+    { name: "Meteor Infant Capsule", description: "Lightweight capsule compatible with travel systems.", price: 12500, category: "Car Seats", imageUrl: "https://picsum.photos/seed/carseat14/400/300", stock: 28 },
+    { name: "Supernova SecureRide Convertible", description: "Enhanced side-impact protection.", price: 20500, category: "Car Seats", imageUrl: "https://picsum.photos/seed/carseat15/400/300", stock: 13 },
+     // ...(Continue adding 35 more unique car seat entries)
 
     // == Cribs (Target: 50) ==
     { name: "Lunar Landing Crib", description: "Modern design, converts to toddler bed.", price: 28000, category: "Cribs", imageUrl: "https://picsum.photos/seed/crib1/400/300", stock: 12 },
@@ -141,7 +140,12 @@ const sampleProducts: Omit<Product, 'id'>[] = [
     { name: "Nebula Natural Wood Crib", description: "Solid wood construction, eco-friendly.", price: 29500, category: "Cribs", imageUrl: "https://picsum.photos/seed/crib8/400/300", stock: 11 },
     { name: "Cosmic Canopy Crib", description: "Elegant crib with canopy frame.", price: 39000, category: "Cribs", imageUrl: "https://picsum.photos/seed/crib9/400/300", stock: 5 },
     { name: "StarDust Travel Cot", description: "Lightweight cot with changing station.", price: 14500, category: "Cribs", imageUrl: "https://picsum.photos/seed/crib10/400/300", stock: 18 },
-    // ... (Add 40 more crib variations)
+    { name: "MoonBeam Rocking Bassinet", description: "Gentle rocking motion to soothe baby.", price: 17500, category: "Cribs", imageUrl: "https://picsum.photos/seed/crib11/400/300", stock: 13 },
+    { name: "Horizon Modern Crib", description: "Sleek lines and minimalist aesthetic.", price: 32000, category: "Cribs", imageUrl: "https://picsum.photos/seed/crib12/400/300", stock: 7 },
+    { name: "Twilight Folding Crib", description: "Folds flat for easy storage.", price: 22000, category: "Cribs", imageUrl: "https://picsum.photos/seed/crib13/400/300", stock: 9 },
+    { name: "Aurora Round Crib", description: "Unique circular design statement piece.", price: 42000, category: "Cribs", imageUrl: "https://picsum.photos/seed/crib14/400/300", stock: 4 },
+    { name: "Equinox Crib with Changing Table Combo", description: "Integrated changing table for convenience.", price: 37000, category: "Cribs", imageUrl: "https://picsum.photos/seed/crib15/400/300", stock: 10 },
+    // ...(Continue adding 35 more unique crib entries)
 
     // == Baby Monitors (Target: 50) ==
     { name: "Guardian Angel Video Monitor", description: "HD video and two-way audio.", price: 13000, category: "Monitors", imageUrl: "https://picsum.photos/seed/monitor1/400/300", stock: 40 },
@@ -154,7 +158,12 @@ const sampleProducts: Omit<Product, 'id'>[] = [
     { name: "Cosmic Connect Wi-Fi Monitor", description: "Access video feed from anywhere via Wi-Fi.", price: 15500, category: "Monitors", imageUrl: "https://picsum.photos/seed/monitor8/400/300", stock: 20 },
     { name: "Starlight Simple Audio Monitor", description: "Basic, reliable audio monitoring.", price: 3800, category: "Monitors", imageUrl: "https://picsum.photos/seed/monitor9/400/300", stock: 45 },
     { name: "Zenith Pro Video Monitor System", description: "Pan/tilt/zoom camera, temperature sensor.", price: 25000, category: "Monitors", imageUrl: "https://picsum.photos/seed/monitor10/400/300", stock: 8 },
-    // ... (Add 40 more monitor variations)
+    { name: "Satellite Split Screen Monitor", description: "View multiple cameras simultaneously.", price: 20000, category: "Monitors", imageUrl: "https://picsum.photos/seed/monitor11/400/300", stock: 13 },
+    { name: "Lunar Low Emission Audio Monitor", description: "Designed for minimal EMF emissions.", price: 7500, category: "Monitors", imageUrl: "https://picsum.photos/seed/monitor12/400/300", stock: 28 },
+    { name: "Comet Portable Video Monitor", description: "Compact monitor unit for easy carrying.", price: 14000, category: "Monitors", imageUrl: "https://picsum.photos/seed/monitor13/400/300", stock: 18 },
+    { name: "Pulsar Breathing Sensor Pad Monitor", description: "Under-mattress sensor pad detects movement.", price: 19500, category: "Monitors", imageUrl: "https://picsum.photos/seed/monitor14/400/300", stock: 9 },
+    { name: "Quasar Smart Sock Monitor", description: "Tracks heart rate and oxygen levels.", price: 32000, category: "Monitors", imageUrl: "https://picsum.photos/seed/monitor15/400/300", stock: 7 },
+    // ...(Continue adding 35 more unique monitor entries)
 
     // == Feeding (Target: 50) ==
     { name: "Rocket High Chair", description: "Adjustable height, easy to clean.", price: 8500, category: "Feeding", imageUrl: "https://picsum.photos/seed/feeding1/400/300", stock: 28 },
@@ -167,7 +176,12 @@ const sampleProducts: Omit<Product, 'id'>[] = [
     { name: "Starlight Nursing Pillow", description: "Provides support for feeding.", price: 4200, category: "Feeding", imageUrl: "https://picsum.photos/seed/feeding8/400/300", stock: 30 },
     { name: "Galaxy Formula Mixer Pitcher", description: "Mixes formula easily without clumps.", price: 2500, category: "Feeding", imageUrl: "https://picsum.photos/seed/feeding9/400/300", stock: 40 },
     { name: "Lunar Snack Catcher Cups (2 pack)", description: "Spill-proof snack containers.", price: 1000, category: "Feeding", imageUrl: "https://picsum.photos/seed/feeding10/400/300", stock: 70 },
-    // ... (Add 40 more feeding variations)
+    { name: "Meteor Bottle Brush Set", description: "Includes various brushes for cleaning.", price: 950, category: "Feeding", imageUrl: "https://picsum.photos/seed/feeding11/400/300", stock: 65 },
+    { name: "Supernova Baby Food Maker", description: "Steams and blends baby food.", price: 9800, category: "Feeding", imageUrl: "https://picsum.photos/seed/feeding12/400/300", stock: 12 },
+    { name: "Pulsar Sippy Cup Set (3 stages)", description: "Transition cups for different ages.", price: 1500, category: "Feeding", imageUrl: "https://picsum.photos/seed/feeding13/400/300", stock: 55 },
+    { name: "Quasar Breast Pump (Electric)", description: "Double electric breast pump.", price: 15000, category: "Feeding", imageUrl: "https://picsum.photos/seed/feeding14/400/300", stock: 10 },
+    { name: "Zenith Portable High Chair", description: "Clamps onto tables for on-the-go feeding.", price: 6000, category: "Feeding", imageUrl: "https://picsum.photos/seed/feeding15/400/300", stock: 25 },
+    // ...(Continue adding 35 more unique feeding entries)
 
      // == Clothing (Target: 50) ==
     { name: "Star Explorer Onesie (3-pack)", description: "Soft cotton, size 0-3 months.", price: 2500, category: "Clothing", imageUrl: "https://picsum.photos/seed/clothing1/400/300", stock: 60 },
@@ -180,7 +194,12 @@ const sampleProducts: Omit<Product, 'id'>[] = [
     { name: "Orbit Organic Cotton Bodysuit Set (5 pack, NB)", description: "Gentle on newborn skin.", price: 3000, category: "Clothing", imageUrl: "https://picsum.photos/seed/clothing8/400/300", stock: 58 },
     { name: "Starlight Socks & Booties Set", description: "Keep little feet warm.", price: 700, category: "Clothing", imageUrl: "https://picsum.photos/seed/clothing9/400/300", stock: 90 },
     { name: "Rocket Rain Jacket (3T)", description: "Waterproof jacket for puddle jumping.", price: 3500, category: "Clothing", imageUrl: "https://picsum.photos/seed/clothing10/400/300", stock: 35 },
-    // ... (Add 40 more clothing variations)
+    { name: "Comet Cotton T-Shirt Set (4 pack, 18M)", description: "Everyday essential t-shirts.", price: 1600, category: "Clothing", imageUrl: "https://picsum.photos/seed/clothing11/400/300", stock: 75 },
+    { name: "Andromeda Denim Overalls (2T)", description: "Classic and durable overalls.", price: 2400, category: "Clothing", imageUrl: "https://picsum.photos/seed/clothing12/400/300", stock: 42 },
+    { name: "Voyager Fleece Lined Snowsuit (12M)", description: "Warm suit for winter weather.", price: 4500, category: "Clothing", imageUrl: "https://picsum.photos/seed/clothing13/400/300", stock: 25 },
+    { name: "Nova Party Dress (3T)", description: "Sparkly dress for special occasions.", price: 2900, category: "Clothing", imageUrl: "https://picsum.photos/seed/clothing14/400/300", stock: 30 },
+    { name: "Stellar Swimsuit Set (2T)", description: "Includes rash guard and swim trunks.", price: 2100, category: "Clothing", imageUrl: "https://picsum.photos/seed/clothing15/400/300", stock: 50 },
+    // ...(Continue adding 35 more unique clothing entries)
 
      // == Toys (Target: 50) ==
     { name: "Planet Plushie Rattle", description: "Soft textures and gentle rattle sound.", price: 750, category: "Toys", imageUrl: "https://picsum.photos/seed/toy1/400/300", stock: 90 },
@@ -193,7 +212,12 @@ const sampleProducts: Omit<Product, 'id'>[] = [
     { name: "Starlight Musical Mobile", description: "Crib mobile with soothing melodies.", price: 4800, category: "Toys", imageUrl: "https://picsum.photos/seed/toy8/400/300", stock: 18 },
     { name: "Rocket Ride-On Toy", description: "Fun ride-on for toddlers.", price: 5500, category: "Toys", imageUrl: "https://picsum.photos/seed/toy9/400/300", stock: 22 },
     { name: "Comet Bath Toy Set", description: "Floating toys for bath time fun.", price: 900, category: "Toys", imageUrl: "https://picsum.photos/seed/toy10/400/300", stock: 75 },
-    // ... (Add 40 more toy variations)
+    { name: "Supernova Shape Sorter", description: "Helps develop shape recognition.", price: 1400, category: "Toys", imageUrl: "https://picsum.photos/seed/toy11/400/300", stock: 58 },
+    { name: "Pulsar Push Walker", description: "Helps babies learning to walk.", price: 4200, category: "Toys", imageUrl: "https://picsum.photos/seed/toy12/400/300", stock: 28 },
+    { name: "Quasar Wooden Puzzle Set", description: "Simple puzzles for toddlers.", price: 1800, category: "Toys", imageUrl: "https://picsum.photos/seed/toy13/400/300", stock: 45 },
+    { name: "Zenith Play Kitchenette", description: "Mini kitchen for imaginative play.", price: 8900, category: "Toys", imageUrl: "https://picsum.photos/seed/toy14/400/300", stock: 12 },
+    { name: "Meteor Musical Instrument Set", description: "Includes shakers, drum, xylophone.", price: 3500, category: "Toys", imageUrl: "https://picsum.photos/seed/toy15/400/300", stock: 35 },
+    // ...(Continue adding 35 more unique toy entries)
 ];
 
 // --- Function to clear existing collection (Use with caution!) ---
@@ -246,20 +270,17 @@ async function seedData() {
         batch.set(docRef, productData);
         count++;
 
-        if (count % BATCH_SIZE === 0) {
+        if (count % BATCH_SIZE === 0 || count === totalProducts) {
             const batchNum = Math.ceil(count / BATCH_SIZE);
-            console.log(`   Committing batch ${batchNum} (${BATCH_SIZE} products)...`);
+            const itemsInBatch = (count % BATCH_SIZE === 0) ? BATCH_SIZE : count % BATCH_SIZE;
+            console.log(`   Committing batch ${batchNum} (${itemsInBatch} products)...`);
             await batch.commit();
-            batch = db.batch(); // Start a new batch
+            if (count < totalProducts) {
+                batch = db.batch(); // Start a new batch only if there are more items
+            }
         }
     }
 
-    // Commit any remaining items in the last batch
-    const remaining = count % BATCH_SIZE;
-    if (remaining !== 0) {
-        console.log(`   Committing final batch (${remaining} products)...`);
-        await batch.commit();
-    }
 
     const endTime = Date.now();
     const duration = ((endTime - startTime) / 1000).toFixed(2); // Duration in seconds
