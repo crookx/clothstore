@@ -7,27 +7,23 @@
  *     Firebase configuration variables (e.g., NEXT_PUBLIC_FIREBASE_PROJECT_ID).
  * 2.  Get Service Account Credentials:
  *     - Go to your Firebase Project Settings > Service accounts.
- *     - Click "Generate new private key" and download the JSON file.
- *     - **IMPORTANT:** Save this file to a SECURE location OUTSIDE your project directory.
- *       For example, save it as `/path/to/your/secure/location/serviceAccountKey.json`.
- *       **NEVER commit this file to version control (Git).**
- * 3.  Set Environment Variable:
- *     - Before running the script, you MUST set the `GOOGLE_APPLICATION_CREDENTIALS`
- *       environment variable in your terminal session to the FULL PATH of the downloaded JSON key file.
- *       - **Linux/macOS:**
- *         ```bash
- *         export GOOGLE_APPLICATION_CREDENTIALS="/path/to/your/secure/location/serviceAccountKey.json"
- *         ```
- *       - **Windows (PowerShell):**
- *         ```powershell
- *         $env:GOOGLE_APPLICATION_CREDENTIALS = "C:\path\to\your\secure\location\serviceAccountKey.json"
- *         ```
- *       - **Firebase Studio/Cloud IDEs:** Check the documentation for your specific IDE on how to securely set environment variables or manage secrets. You might need to upload the key file through their interface.
- * 4.  Install Dependencies:
+ *     - Click "Generate new private key" and download the JSON file (e.g., `serviceAccountKey.json`).
+ * 3.  **Upload the Service Account Key:** Upload the downloaded JSON key file (e.g., `serviceAccountKey.json`) into your Firebase Studio IDX workspace. You can place it in the root directory or another location.
+ * 4.  **Set Environment Variable in `.env.local`:**
+ *     - Open or create the `.env.local` file in your project root.
+ *     - Add the following line, **replacing `/path/inside/idx/to/your/serviceAccountKey.json` with the ACTUAL path to the file you uploaded in step 3 within your IDX workspace**:
+ *       ```
+ *       GOOGLE_APPLICATION_CREDENTIALS=/path/inside/idx/to/your/serviceAccountKey.json
+ *       ```
+ *       *Example if uploaded to root:* `GOOGLE_APPLICATION_CREDENTIALS=./serviceAccountKey.json`
+ *       *Example if uploaded to `/secure` folder:* `GOOGLE_APPLICATION_CREDENTIALS=./secure/serviceAccountKey.json`
+ *     - **NEVER commit the `.env.local` file or the service account key file to version control (Git).** Add `.env.local` and the key file name to your `.gitignore`.
+ * 5.  Install Dependencies:
  *     - Run `npm install` or `yarn install` in your project root if you haven't already.
- * 5.  Run the Script:
- *     - Open your terminal in the project root (ensure the environment variable from step 3 is set in this session).
+ * 6.  Run the Script:
+ *     - Open your terminal *within the IDX environment* in the project root.
  *     - Execute the script using: `npm run seed:firestore`
+ *     - The `dotenv-cli` tool (configured in `package.json`) will load the `GOOGLE_APPLICATION_CREDENTIALS` path from `.env.local` for the script execution.
  *
  * This script will:
  * - Connect to your Firestore database using Admin privileges derived from the service account key specified by GOOGLE_APPLICATION_CREDENTIALS.
@@ -47,21 +43,22 @@ const BATCH_SIZE = 100; // Firestore batch write limit is 500 operations
 // --- Environment Variable Validation ---
 if (!PROJECT_ID || PROJECT_ID === "YOUR_PROJECT_ID_HERE") {
   const errorMessage =
-    `❌ Configuration Error:\n` +
-    ` Error: NEXT_PUBLIC_FIREBASE_PROJECT_ID environment variable not set or still has the placeholder value. ` +
-    `Please ensure it is set correctly in your .env.local file and you have replaced "YOUR_PROJECT_ID_HERE" with your actual Firebase Project ID.\n`;
+    `\n❌ Configuration Error:\n` +
+    ` Error: NEXT_PUBLIC_FIREBASE_PROJECT_ID environment variable not set or still has the placeholder value.`+
+    ` Please ensure it is set correctly in your .env.local file and you have replaced "YOUR_PROJECT_ID_HERE" with your actual Firebase Project ID.`+
+    ` Remember to restart your terminal or source your profile if you set it globally.\n`;
   console.error(errorMessage);
   process.exit(1); // Exit if the crucial Project ID is missing or is the placeholder
 }
 
-// Validate GOOGLE_APPLICATION_CREDENTIALS presence
+// Validate GOOGLE_APPLICATION_CREDENTIALS presence (dotenv-cli should load this from .env.local)
 if (!process.env.GOOGLE_APPLICATION_CREDENTIALS) {
     console.error("\n❌ Configuration Error:");
-    console.error("GOOGLE_APPLICATION_CREDENTIALS environment variable is not set in your terminal.");
-    console.error("This variable must point to the full path of your downloaded service account key JSON file.");
-    console.error("Example (Linux/macOS): export GOOGLE_APPLICATION_CREDENTIALS=\"/path/to/your/serviceAccountKey.json\"");
-    console.error("Example (Windows PowerShell): $env:GOOGLE_APPLICATION_CREDENTIALS = \"C:\\path\\to\\your\\serviceAccountKey.json\"");
-    console.error("Please set this variable in your current terminal session before running the script.\n");
+    console.error("GOOGLE_APPLICATION_CREDENTIALS environment variable is not set.");
+    console.error("Ensure it's defined in your .env.local file and points to the correct path");
+    console.error("of your uploaded service account key JSON file within the IDX workspace.");
+    console.error("Example line in .env.local: GOOGLE_APPLICATION_CREDENTIALS=./serviceAccountKey.json");
+    console.error("The `npm run seed:firestore` command uses `dotenv-cli` to load this.\n");
     process.exit(1);
 }
 
@@ -70,25 +67,29 @@ if (!process.env.GOOGLE_APPLICATION_CREDENTIALS) {
 try {
     // Check if already initialized to avoid duplicate app error
     if (admin.apps.length === 0) {
-        // Use application default credentials (reads GOOGLE_APPLICATION_CREDENTIALS)
+        // Use application default credentials (reads GOOGLE_APPLICATION_CREDENTIALS loaded by dotenv-cli)
         admin.initializeApp({
+            // The credential is automatically read from the environment variable
+            // GOOGLE_APPLICATION_CREDENTIALS when using applicationDefault()
             credential: admin.credential.applicationDefault(),
             projectId: PROJECT_ID, // Use the validated PROJECT_ID
          });
          console.log(`🔑 Firebase Admin SDK initialized for project: ${PROJECT_ID} using Application Default Credentials.`);
-         console.log(`   (Credentials loaded from: ${process.env.GOOGLE_APPLICATION_CREDENTIALS})`);
+         // Note: We log a generic message as the specific path is now abstracted
+         console.log(`   (Credentials loaded based on GOOGLE_APPLICATION_CREDENTIALS)`);
     } else {
         console.log('ℹ️ Firebase Admin SDK already initialized.');
     }
 } catch (error: any) {
     console.error('❌ Firebase Admin SDK initialization error:', error);
-    console.error('   Ensure the GOOGLE_APPLICATION_CREDENTIALS environment variable points to a valid service account key file.');
+    console.error(`   Ensure the GOOGLE_APPLICATION_CREDENTIALS path in your .env.local file ('${process.env.GOOGLE_APPLICATION_CREDENTIALS}') points to a valid service account key file within your IDX workspace.`);
     process.exit(1);
 }
 
 const db = admin.firestore();
 
 // --- Sample Product Data (Kenyan Shillings - KES) ---
+// Using KES (Kenyan Shillings) for prices
 const sampleProducts: Omit<Product, 'id'>[] = [
     // == Strollers (Target: 50) ==
     { name: "Safari Cruiser Stroller", description: "Smooth ride across Nairobi streets, folds compactly.", price: 18500, category: "Strollers", imageUrl: "https://picsum.photos/seed/stroller1/400/300", stock: 15 },
@@ -458,6 +459,7 @@ const sampleProducts: Omit<Product, 'id'>[] = [
     { name: "Toy 50", description: "Musical mobile for crib", price: 5100, category: "Toys", imageUrl: "https://picsum.photos/seed/toy50/400/300", stock: 22 },
 ];
 
+
 // --- Function to clear existing collection (Use with caution!) ---
 async function clearCollection(collectionPath: string) {
     console.log(`🧹 Clearing collection: ${collectionPath}...`);
@@ -531,5 +533,3 @@ seedData().catch((error) => {
     console.error('\\n❌ Error during Firestore seeding:', error);
     process.exit(1);
 });
-
-    
