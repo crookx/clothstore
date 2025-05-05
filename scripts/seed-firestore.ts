@@ -1,3 +1,4 @@
+
 /**
  * Firestore Seeding Script
  *
@@ -7,34 +8,39 @@
  * 2.  Get Service Account Credentials:
  *     - Go to your Firebase Project Settings > Service accounts.
  *     - Click "Generate new private key" and download the JSON file.
- *     - **IMPORTANT:** Open the downloaded JSON file, copy its entire content.
- *     - Paste the copied JSON content into the `SERVICE_ACCOUNT_KEY_JSON` variable in your `.env.local` file.
- *       Ensure the pasted content is enclosed in single quotes (`'...'`).
- *       **CRITICAL for `.env.local`:** Inside the pasted JSON string value that starts with `SERVICE_ACCOUNT_KEY_JSON='{...}'`, find the `"private_key"` field.
- *       Replace **all** newline characters (`\n`) *within the private_key string value itself* with the literal string `\\n`.
- *       Example within `.env.local`:
- *       `SERVICE_ACCOUNT_KEY_JSON='{ ... "private_key": "-----BEGIN PRIVATE KEY-----\\nMIIEvg...\\n...\\n-----END PRIVATE KEY-----\\n", ... }'`
- * 3.  Install Dependencies:
- *     - Run `npm install` or `yarn install` in your project root if you haven't already (to install `firebase-admin`, `tsx`, `dotenv-cli`).
- * 4.  Run the Script:
- *     - Open your terminal in the project root.
+ *     - **IMPORTANT:** Save this file to a SECURE location OUTSIDE your project directory.
+ *       For example, save it as `/path/to/your/secure/location/serviceAccountKey.json`.
+ *       **NEVER commit this file to version control (Git).**
+ * 3.  Set Environment Variable:
+ *     - Before running the script, you MUST set the `GOOGLE_APPLICATION_CREDENTIALS`
+ *       environment variable in your terminal session to the FULL PATH of the downloaded JSON key file.
+ *       - **Linux/macOS:**
+ *         ```bash
+ *         export GOOGLE_APPLICATION_CREDENTIALS="/path/to/your/secure/location/serviceAccountKey.json"
+ *         ```
+ *       - **Windows (PowerShell):**
+ *         ```powershell
+ *         $env:GOOGLE_APPLICATION_CREDENTIALS = "C:\path\to\your\secure\location\serviceAccountKey.json"
+ *         ```
+ *       - **Firebase Studio/Cloud IDEs:** Check the documentation for your specific IDE on how to securely set environment variables or manage secrets. You might need to upload the key file through their interface.
+ * 4.  Install Dependencies:
+ *     - Run `npm install` or `yarn install` in your project root if you haven't already.
+ * 5.  Run the Script:
+ *     - Open your terminal in the project root (ensure the environment variable from step 3 is set in this session).
  *     - Execute the script using: `npm run seed:firestore`
- *       (The `dotenv-cli` package in the script command automatically loads variables from `.env.local`)
  *
  * This script will:
- * - Connect to your Firestore database using Admin privileges derived from the SERVICE_ACCOUNT_KEY_JSON.
+ * - Connect to your Firestore database using Admin privileges derived from the service account key specified by GOOGLE_APPLICATION_CREDENTIALS.
  * - Add sample product data using batch writes.
  * - **By default, it DOES NOT clear existing data.** Uncomment the `clearCollection` line if you want to wipe the collection first.
  */
-// `dotenv-cli` in package.json's script handles loading .env.local
 import path from 'path';
 import admin from 'firebase-admin';
 import type { Product } from '@/types/product'; // Adjust path if necessary
 
 
 // --- Configuration ---
-const PROJECT_ID = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID; // Get Project ID from env loaded by dotenv-cli
-const SERVICE_ACCOUNT_JSON_STRING = process.env.SERVICE_ACCOUNT_KEY_JSON;
+const PROJECT_ID = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID; // Get Project ID from env
 const COLLECTION_NAME = 'products';
 const BATCH_SIZE = 100; // Firestore batch write limit is 500 operations
 
@@ -43,62 +49,40 @@ if (!PROJECT_ID || PROJECT_ID === "YOUR_PROJECT_ID_HERE") {
   const errorMessage =
     `❌ Configuration Error:\n` +
     ` Error: NEXT_PUBLIC_FIREBASE_PROJECT_ID environment variable not set or still has the placeholder value. ` +
-    `Please ensure it is set correctly in your .env.local file and you have replaced "YOUR_PROJECT_ID_HERE" with your actual Firebase Project ID. Remember to restart your terminal or source your profile if you set it globally. \n`;
+    `Please ensure it is set correctly in your .env.local file and you have replaced "YOUR_PROJECT_ID_HERE" with your actual Firebase Project ID.\n`;
   console.error(errorMessage);
   process.exit(1); // Exit if the crucial Project ID is missing or is the placeholder
+}
+
+// Validate GOOGLE_APPLICATION_CREDENTIALS presence
+if (!process.env.GOOGLE_APPLICATION_CREDENTIALS) {
+    console.error("\n❌ Configuration Error:");
+    console.error("GOOGLE_APPLICATION_CREDENTIALS environment variable is not set in your terminal.");
+    console.error("This variable must point to the full path of your downloaded service account key JSON file.");
+    console.error("Example (Linux/macOS): export GOOGLE_APPLICATION_CREDENTIALS=\"/path/to/your/serviceAccountKey.json\"");
+    console.error("Example (Windows PowerShell): $env:GOOGLE_APPLICATION_CREDENTIALS = \"C:\\path\\to\\your\\serviceAccountKey.json\"");
+    console.error("Please set this variable in your current terminal session before running the script.\n");
+    process.exit(1);
 }
 
 
 // --- Initialize Firebase Admin SDK ---
 try {
-    // Check if SERVICE_ACCOUNT_KEY_JSON is set
-    if (!SERVICE_ACCOUNT_JSON_STRING) {
-        console.error("\n❌ Configuration Error:");
-        console.error("SERVICE_ACCOUNT_KEY_JSON environment variable is not set correctly in your .env.local file.");
-        console.error("Please open your downloaded serviceAccountKey.json file, copy its entire content,");
-        console.error("and paste it between the single quotes for SERVICE_ACCOUNT_KEY_JSON in .env.local.");
-        console.error(">>> IMPORTANT: Ensure newline characters ('\\n') within the 'private_key' field's value are replaced with the literal string '\\\\n'. <<<");
-        process.exit(1);
-    }
-
-    let serviceAccount;
-    try {
-        // --- DEBUGGING LOG ---
-        // Uncomment the line below to log the string *before* parsing.
-        // This helps verify the format, especially the escaped newlines in the private_key.
-        // Be cautious logging this in production as it contains sensitive info.
-        // console.log("Attempting to parse SERVICE_ACCOUNT_KEY_JSON string:\n", SERVICE_ACCOUNT_JSON_STRING, "\n--- End of String ---");
-        // --- END DEBUGGING LOG ---
-
-        // Attempt to parse the JSON string from the environment variable
-        serviceAccount = JSON.parse(SERVICE_ACCOUNT_JSON_STRING);
-
-    } catch (parseError) {
-        console.error("\n❌ Configuration Error:");
-        console.error("Failed to parse the SERVICE_ACCOUNT_KEY_JSON value from .env.local.");
-        console.error("Please ensure the content pasted from your serviceAccountKey.json file is valid JSON, enclosed in single quotes (')");
-        console.error("AND that all newline characters ('\\n') within the 'private_key' value have been replaced with the literal string '\\\\n'.");
-        console.error("Example snippet within .env.local:");
-        console.error("SERVICE_ACCOUNT_KEY_JSON='{...\"private_key\": \"-----BEGIN PRIVATE KEY-----\\\\nABC...\\\\n...XYZ\\\\n-----END PRIVATE KEY-----\\\\n\",...}'");
-        console.error("Parsing Error:", parseError, "\n");
-        process.exit(1);
-    }
-
     // Check if already initialized to avoid duplicate app error
     if (admin.apps.length === 0) {
+        // Use application default credentials (reads GOOGLE_APPLICATION_CREDENTIALS)
         admin.initializeApp({
-            credential: admin.credential.cert(serviceAccount),
+            credential: admin.credential.applicationDefault(),
             projectId: PROJECT_ID, // Use the validated PROJECT_ID
          });
-         console.log(`🔑 Firebase Admin SDK initialized for project: ${PROJECT_ID} using credentials from .env.local`);
+         console.log(`🔑 Firebase Admin SDK initialized for project: ${PROJECT_ID} using Application Default Credentials.`);
+         console.log(`   (Credentials loaded from: ${process.env.GOOGLE_APPLICATION_CREDENTIALS})`);
     } else {
         console.log('ℹ️ Firebase Admin SDK already initialized.');
     }
-
-
 } catch (error: any) {
-    // Catch potential errors during initializeApp if parsing succeeded but credentials are bad
     console.error('❌ Firebase Admin SDK initialization error:', error);
+    console.error('   Ensure the GOOGLE_APPLICATION_CREDENTIALS environment variable points to a valid service account key file.');
     process.exit(1);
 }
 
@@ -547,3 +531,5 @@ seedData().catch((error) => {
     console.error('\\n❌ Error during Firestore seeding:', error);
     process.exit(1);
 });
+
+    
