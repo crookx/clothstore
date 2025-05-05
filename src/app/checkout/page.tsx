@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useCart } from '@/context/cart-context';
@@ -13,8 +14,8 @@ import { useToast } from '@/hooks/use-toast';
 import { useRouter } from 'next/navigation';
 import { useState, useEffect } from 'react';
 import { placeOrder } from '@/services/orderService'; // Import the order service
-import { auth } from '@/lib/firebase/config'; // Import Firebase auth
-import { onAuthStateChanged, User } from 'firebase/auth'; // Import auth state listener and User type
+import { ensureFirebaseServices, firebaseInitializationError } from '@/lib/firebase/config'; // Import ensureFirebaseServices and error state
+import { onAuthStateChanged, User, Auth } from 'firebase/auth'; // Import auth state listener and User type, Auth type
 
 export default function CheckoutPage() {
   const { cart, clearCart } = useCart();
@@ -23,16 +24,40 @@ export default function CheckoutPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [currentUser, setCurrentUser] = useState<User | null>(null); // State for authenticated user
   const [authLoading, setAuthLoading] = useState(true); // State for auth loading
+  const [authInstance, setAuthInstance] = useState<Auth | null>(null); // State to hold Auth instance
+
 
   // --- Listen for Authentication State Changes ---
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      setCurrentUser(user);
-      setAuthLoading(false); // Auth state determined
-    });
-    // Cleanup subscription on unmount
-    return () => unsubscribe();
-  }, []);
+     let unsubscribe: (() => void) | null = null;
+     try {
+         // Check for initialization error first
+         if (firebaseInitializationError) {
+            console.error("Checkout: Firebase initialization failed:", firebaseInitializationError);
+            toast({ title: "Authentication Error", description: "Could not load user information.", variant: "destructive" });
+            setAuthLoading(false);
+            return;
+         }
+
+         const { auth } = ensureFirebaseServices();
+         setAuthInstance(auth); // Store auth instance
+
+         unsubscribe = onAuthStateChanged(auth, (user) => {
+           setCurrentUser(user);
+           setAuthLoading(false); // Auth state determined
+         });
+     } catch (error) {
+         console.error("Checkout: Error getting Firebase Auth instance:", error);
+         toast({ title: "Error", description: "Failed to check authentication status.", variant: "destructive" });
+         setAuthLoading(false);
+     }
+     // Cleanup subscription on unmount
+     return () => {
+       if (unsubscribe) {
+         unsubscribe();
+       }
+     };
+   }, [toast]);
 
 
   const subtotal = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
@@ -109,7 +134,7 @@ export default function CheckoutPage() {
       });
 
       // Redirect to a confirmation page or home
-      router.push('/'); // Redirect to home for now (consider an order confirmation page)
+      router.push(`/order-confirmation?id=${orderId}`); // Redirect to confirmation page with ID
 
     } catch (error) {
       console.error("Order placement failed:", error);

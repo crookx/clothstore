@@ -1,3 +1,4 @@
+
 'use client';
 
 import Link from 'next/link';
@@ -6,8 +7,8 @@ import { Button } from '@/components/ui/button';
 import { useCart } from '@/context/cart-context';
 import { Badge } from '@/components/ui/badge';
 import { useEffect, useState } from 'react';
-import { auth } from '@/lib/firebase/config'; // Import Firebase auth
-import { onAuthStateChanged, signOut, User } from 'firebase/auth'; // Import auth state listener, signOut, User type
+import { ensureFirebaseServices, firebaseInitializationError } from '@/lib/firebase/config'; // Import ensureFirebaseServices and error state
+import { onAuthStateChanged, signOut, User, Auth } from 'firebase/auth'; // Import auth state listener, signOut, User type, Auth type
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -26,6 +27,7 @@ export default function Header() {
   const [itemCount, setItemCount] = useState(0);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
+  const [authInstance, setAuthInstance] = useState<Auth | null>(null); // State to hold the Auth instance
   const { toast } = useToast();
   const router = useRouter();
 
@@ -35,20 +37,51 @@ export default function Header() {
     setItemCount(cart.reduce((sum, item) => sum + item.quantity, 0));
   }, [cart]);
 
-   // Listen for Authentication State Changes
+   // Get Auth instance and listen for state changes
    useEffect(() => {
-     const unsubscribe = onAuthStateChanged(auth, (user) => {
-       setCurrentUser(user);
-       setAuthLoading(false); // Auth state determined
-     });
+    let unsubscribe: (() => void) | null = null;
+
+    try {
+      // Check for initialization error first
+      if (firebaseInitializationError) {
+        console.error("Header: Firebase initialization failed:", firebaseInitializationError);
+        setAuthLoading(false);
+        return;
+      }
+
+      const { auth } = ensureFirebaseServices();
+      setAuthInstance(auth); // Store the auth instance
+
+      unsubscribe = onAuthStateChanged(auth, (user) => {
+        setCurrentUser(user);
+        setAuthLoading(false); // Auth state determined
+      });
+    } catch (error) {
+        console.error("Header: Error getting Firebase Auth instance:", error);
+        toast({
+           title: 'Authentication Error',
+           description: 'Could not initialize authentication. Please refresh.',
+           variant: 'destructive',
+        });
+        setAuthLoading(false);
+    }
+
      // Cleanup subscription on unmount
-     return () => unsubscribe();
-   }, []);
+     return () => {
+        if (unsubscribe) {
+            unsubscribe();
+        }
+     };
+   }, [toast]); // Added toast to dependency array
 
    // Handle Logout
    const handleLogout = async () => {
+        if (!authInstance) {
+            toast({ title: 'Logout Failed', description: 'Authentication service not available.', variant: 'destructive' });
+            return;
+        }
         try {
-           await signOut(auth);
+           await signOut(authInstance);
            toast({ title: 'Logged Out', description: 'You have been successfully logged out.' });
            router.push('/'); // Redirect to home after logout
         } catch (error) {
@@ -86,7 +119,7 @@ export default function Header() {
           {authLoading ? (
              // Optional: Show a loading indicator while checking auth
              <Button variant="ghost" size="icon" disabled>
-                <UserIcon className="h-5 w-5 animate-pulse" />
+                <UserIcon className="h-5 w-5 animate-pulse text-muted-foreground" />
              </Button>
           ) : currentUser ? (
              // User is logged in - Show Dropdown
