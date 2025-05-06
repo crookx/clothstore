@@ -4,19 +4,8 @@ import { getAuth, connectAuthEmulator, type Auth } from 'firebase/auth';
 import { getFirestore, connectFirestoreEmulator, type Firestore } from 'firebase/firestore';
 import { getStorage, connectStorageEmulator, type FirebaseStorage } from 'firebase/storage';
 
-// --- Environment Variable Keys ---
-// Define the keys we expect, WITH the NEXT_PUBLIC_ prefix
-const firebaseEnvVarKeys = [
-    'NEXT_PUBLIC_FIREBASE_API_KEY',
-    'NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN',
-    'NEXT_PUBLIC_FIREBASE_PROJECT_ID',
-    'NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET',
-    'NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID',
-    'NEXT_PUBLIC_FIREBASE_APP_ID',
-] as const; // Use const assertion for stricter typing
-
 // --- Firebase Configuration Object ---
-// Build the config object using the correct prefixed env vars
+// Reads NEXT_PUBLIC_ prefixed variables, crucial for client-side access in Next.js
 const firebaseConfig: FirebaseOptions = {
     apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
     authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
@@ -34,86 +23,68 @@ let db: Firestore | undefined;
 let storage: FirebaseStorage | undefined;
 let firebaseInitializationError: Error | null = null; // Store initialization error
 
-// --- Check for Missing Environment Variables ---
-const missingEnvVars = firebaseEnvVarKeys.filter(key => {
-    const value = process.env[key];
-    // Check if the value is missing, empty, or still a placeholder
-    return !value || value.startsWith('YOUR_') || value.includes('XXX') || value === "" || value === "YOUR_PROJECT_ID_HERE"; // Added check for specific placeholder
-});
 
-if (missingEnvVars.length > 0) {
-    const simpleMissingKeys = missingEnvVars.map(key => key.replace('NEXT_PUBLIC_FIREBASE_', '')); // Show simpler names in error
-    const errorMessage =
-        `🔴 FATAL ERROR: Missing or placeholder Firebase environment variables: ${simpleMissingKeys.join(', ')}. ` +
-        `\n\n➡️ Please take the following steps:\n` +
-        `1. CHECK FILE LOCATION: Ensure a file named '.env.local' exists in the ROOT directory of your project (the same folder as package.json).\n` +
-        `2. CHECK VARIABLES: Open '.env.local' and verify that ALL the required variables (like NEXT_PUBLIC_FIREBASE_API_KEY, etc.) are present and have your ACTUAL Firebase credential values (NOT placeholders like 'YOUR_...' or 'XXX' or empty values).\n` +
-        `3. RESTART SERVER: After creating or modifying '.env.local', you MUST STOP your Next.js development server (Ctrl+C in the terminal) and RESTART it using 'npm run dev' or 'yarn dev'.\n`;
-
-    firebaseInitializationError = new Error(errorMessage); // Store the error
-
-    // Log detailed error message to the server console AND client console (if possible)
-    console.error(errorMessage); // Server console
-    if (typeof window !== 'undefined') {
-         console.error(errorMessage); // Client console
+// --- Initialize Firebase App and Services ---
+try {
+    // Basic check if essential config values seem present (avoids cryptic Firebase errors if totally blank)
+    if (!firebaseConfig.apiKey || !firebaseConfig.projectId) {
+         throw new Error("Essential Firebase config (apiKey, projectId) is missing. Check .env.local and ensure variables start with NEXT_PUBLIC_");
     }
-} else {
-    // --- Initialize Firebase App (Only if no config errors) ---
-    try {
-        if (!getApps().length) {
-            app = initializeApp(firebaseConfig);
-            console.log("Firebase App initialized successfully.");
-        } else {
-            app = getApp();
-            // console.log("Firebase app already initialized."); // Less verbose now
-        }
 
-        // --- Initialize Firebase Services (Only if App is initialized) ---
-        auth = getAuth(app);
-        db = getFirestore(app);
-        storage = getStorage(app);
-        // console.log("Firebase Auth, Firestore, and Storage services obtained."); // Less verbose
-
-        // --- Connect to Emulators (Optional - Development Only) ---
-        const useEmulator = process.env.NEXT_PUBLIC_USE_FIREBASE_EMULATOR === 'true';
-        if (useEmulator && typeof window !== 'undefined' && !(globalThis as any).__firebase_emulators_connected) {
-            (globalThis as any).__firebase_emulators_connected = true;
-            console.warn("🔌 Connecting to Firebase Emulators (client-side)...");
-            try {
-                connectAuthEmulator(auth, "http://localhost:9099", { disableWarnings: true });
-                connectFirestoreEmulator(db, "localhost", 8080);
-                connectStorageEmulator(storage, "localhost", 9199);
-                console.log("✅ Attempted connection to Auth, Firestore, and Storage Emulators.");
-            } catch (emulatorError: any) {
-                console.warn("Emulator connection issue (might be expected):", emulatorError.message);
-            }
-        }
-
-    } catch (error: any) {
-        console.error("🔴 Firebase initialization failed:", error);
-        // Store the specific initialization error
-        firebaseInitializationError = new Error(`Firebase initialization failed. Original error: ${error.message}`);
-        console.error(firebaseInitializationError.message); // Log immediately
+    if (!getApps().length) {
+        app = initializeApp(firebaseConfig);
+        console.log("Firebase App initialized successfully.");
+    } else {
+        app = getApp();
+        // console.log("Firebase app already initialized.");
     }
+
+    // Get services only if app initialized successfully
+    auth = getAuth(app);
+    db = getFirestore(app);
+    storage = getStorage(app);
+    // console.log("Firebase Auth, Firestore, and Storage services obtained.");
+
+    // --- Connect to Emulators (Optional - Development Only) ---
+    const useEmulator = process.env.NEXT_PUBLIC_USE_FIREBASE_EMULATOR === 'true';
+     // Check if running in a browser context before connecting emulators
+     if (useEmulator && typeof window !== 'undefined' && !(globalThis as any).__firebase_emulators_connected) {
+        (globalThis as any).__firebase_emulators_connected = true; // Prevent multiple connections
+        console.warn("🔌 Connecting to Firebase Emulators (client-side)...");
+        try {
+             // Make sure auth, db, storage are defined before connecting
+             if (auth) connectAuthEmulator(auth, "http://localhost:9099", { disableWarnings: true }); else console.warn("Auth service not available for emulator connection.");
+             if (db) connectFirestoreEmulator(db, "localhost", 8080); else console.warn("Firestore service not available for emulator connection.");
+             if (storage) connectStorageEmulator(storage, "localhost", 9199); else console.warn("Storage service not available for emulator connection.");
+            console.log("✅ Attempted connection to Auth, Firestore, and Storage Emulators.");
+        } catch (emulatorError: any) {
+            console.warn("Emulator connection issue (might be expected if emulators aren't running):", emulatorError.message);
+        }
+    }
+
+} catch (error: any) {
+    console.error("🔴 Firebase initialization failed:", error);
+    // Store the specific initialization error
+    firebaseInitializationError = new Error(`Firebase initialization failed: ${error.message}. Ensure config in .env.local is correct and server restarted.`);
+    console.error(firebaseInitializationError.message); // Log immediately
 }
 
+
 // --- Function to Ensure Services are Ready ---
-// This function acts as a gatekeeper. Code needing Firebase services should call this first.
-// It returns the services if successful, or null if there was an initialization error.
+// Returns the services if successful, or null if there was an initialization error.
 export const ensureFirebaseServices = (): {
     app: ReturnType<typeof initializeApp>;
     auth: Auth;
     db: Firestore;
     storage: FirebaseStorage;
 } | null => {
-    // If an error occurred during initialization (config or service level), return null.
+    // If an error occurred during initialization, return null.
     if (firebaseInitializationError) {
-        // Error is already logged in the console during the check
+        // The error was already logged during the catch block
         return null;
     }
     // Double-check if services are somehow undefined even without an error flag
     if (!app || !auth || !db || !storage) {
-         // Set the error state now if it wasn't caught before
          firebaseInitializationError = new Error("Firebase services are unexpectedly unavailable after initialization attempt.");
          console.error(firebaseInitializationError.message);
          return null;
@@ -122,6 +93,5 @@ export const ensureFirebaseServices = (): {
     return { app, auth, db, storage };
 };
 
-// Export the error state itself for potential conditional rendering or logging elsewhere
-// This allows components to check if initialization failed without calling ensureFirebaseServices
+// Export the error state itself for conditional rendering or logging elsewhere
 export { firebaseInitializationError };
