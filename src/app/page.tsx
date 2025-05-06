@@ -34,30 +34,32 @@ function HeroSection() {
 async function ProductLoader() {
   // Check for Firebase Initialization Error First
   if (firebaseInitializationError) {
-    console.error("Home Page: Firebase initialization failed:", firebaseInitializationError);
+    // Error is already logged during initialization in config.ts
+    // We show a user-friendly message here.
     return (
       <Alert variant="destructive" className="max-w-2xl mx-auto mt-10">
         <AlertCircle className="h-4 w-4" />
-        <AlertTitle>Configuration Error</AlertTitle>
+        <AlertTitle>Service Unavailable</AlertTitle>
         <AlertDescription>
-          Failed to load products because Firebase could not be initialized.
-          Please check your <code>.env.local</code> file and restart the server.
+           Could not load products due to a configuration issue. Please try again later or contact support if the problem persists.
+           Check the browser console for more specific error details related to Firebase initialization.
         </AlertDescription>
       </Alert>
     );
   }
 
   // If no initialization error, proceed to fetch products
-  const products = await fetchProducts(); // fetchProducts should handle its own errors and return [] or null
+  const products = await fetchProducts(); // fetchProducts now returns [] or null on error
 
   if (products === null) {
-     // This case might occur if ensureFirebaseServices returned null even without the explicit error flag set
+     // This case means ensureFirebaseServices failed *after* the initial check,
+     // or fetchProducts itself had a critical error.
      return (
        <Alert variant="destructive" className="max-w-2xl mx-auto mt-10">
          <AlertCircle className="h-4 w-4" />
-         <AlertTitle>Service Unavailable</AlertTitle>
+         <AlertTitle>Error Loading Products</AlertTitle>
          <AlertDescription>
-           Could not connect to the product service. Please try again later.
+           There was a problem fetching product data from the database. Please try refreshing the page.
          </AlertDescription>
        </Alert>
      );
@@ -67,7 +69,7 @@ async function ProductLoader() {
   // --- Comment for User ---
   // If you haven't populated your 'products' collection in Firestore,
   // `products` will be empty even if Firebase initialized correctly.
-  // Use the seed script or manually add data to the Firebase console.
+  // Use the seed script (`npm run seed:firestore` after setup) or manually add data.
 
   return (
     <>
@@ -76,7 +78,7 @@ async function ProductLoader() {
         <ProductList products={products} />
       ) : (
         <p className="text-center text-muted-foreground mt-10">
-          Our product universe is currently being mapped! Check back soon, or use the seed script if you're developing.
+           Our product universe is currently empty! Use the seed script (`npm run seed:firestore` after setup) or add products via the Admin dashboard to populate the shop.
         </p>
       )}
     </>
@@ -88,6 +90,7 @@ async function ProductLoader() {
 export default function Home() {
   return (
     <div className="container mx-auto px-4 py-8">
+      {/* Display the Hero Section */}
       <HeroSection />
 
       {/* Use Suspense to show a loading skeleton while products are fetched */}
