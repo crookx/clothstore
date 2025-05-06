@@ -1,4 +1,3 @@
-
 // src/app/login/page.tsx
 'use client';
 
@@ -12,7 +11,8 @@ import {
   signInWithPopup, // Import for Google Sign-In
   // Import other providers like GithubAuthProvider if needed
    Auth, // Import Auth type
-   getAuth // Import getAuth if needed for re-check (though getFirebaseServices handles it)
+   getAuth, // Import getAuth if needed for re-check (though getFirebaseServices handles it)
+   UserCredential // Import UserCredential type
 } from 'firebase/auth';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -54,6 +54,70 @@ export default function LoginPage() {
    }, [toast]); // Added toast dependency
 
 
+  // --- Helper Function for Redirection ---
+  const handleRedirect = async (userCredential: UserCredential) => {
+    const user = userCredential.user;
+    if (!user) {
+      console.error("Redirect failed: User object not available.");
+      router.push('/'); // Fallback redirect
+      return;
+    }
+
+    setIsLoading(true); // Show loading during claim check
+    setError(null);
+
+    try {
+      // Get the ID token result which contains custom claims
+      const idTokenResult = await user.getIdTokenResult();
+
+      // --- Comment for User: Setting Admin Custom Claims ---
+      // IMPORTANT: The 'admin' custom claim checked below needs to be set on the
+      // user's Firebase Auth record. This is typically done on the backend,
+      // often using Firebase Functions. You cannot set custom claims directly
+      // from the client-side code for security reasons.
+      //
+      // Example using Firebase Admin SDK (in a Firebase Function):
+      //
+      // const admin = require('firebase-admin');
+      // admin.initializeApp();
+      //
+      // exports.setAdminRole = functions.https.onCall(async (data, context) => {
+      //   // Optional: Check if the caller is already an admin
+      //   // if (!context.auth?.token?.admin) {
+      //   //   throw new functions.https.HttpsError('permission-denied', 'Must be admin to set roles.');
+      //   // }
+      //   const userEmail = data.email;
+      //   try {
+      //     const user = await admin.auth().getUserByEmail(userEmail);
+      //     await admin.auth().setCustomUserClaims(user.uid, { admin: true });
+      //     return { message: `Success! ${userEmail} is now an admin.` };
+      //   } catch (error) {
+      //     console.error("Error setting custom claim:", error);
+      //     throw new functions.https.HttpsError('internal', 'Failed to set admin role.');
+      //   }
+      // });
+      // --- End Comment ---
+
+      // Check for the 'admin' custom claim
+      if (idTokenResult.claims.admin === true) {
+        console.log("Admin user detected. Redirecting to admin dashboard.");
+        router.push('/admin/dashboard');
+      } else {
+        console.log("Standard user detected. Redirecting to home page.");
+        router.push('/');
+      }
+    } catch (claimError) {
+      console.error("Error getting user claims:", claimError);
+      toast({ title: 'Redirection Error', description: 'Could not verify user role.', variant: 'destructive' });
+      router.push('/'); // Fallback redirect on claim error
+    } finally {
+      // Short delay to allow redirect to initiate before hiding loader
+      // May not be strictly necessary depending on browser behavior
+      setTimeout(() => setIsLoading(false), 300);
+    }
+  };
+
+
   // --- Comment for User: Firebase Auth Setup ---
   // Make sure you have enabled Email/Password and Google Sign-in (and any other providers)
   // in your Firebase project's Authentication settings.
@@ -74,10 +138,14 @@ export default function LoginPage() {
         toast({ title: 'Login Successful', description: 'Welcome back!' });
       } else {
         userCredential = await createUserWithEmailAndPassword(authInstance, email, password);
+        // --- Note: New users won't have custom claims set immediately.
+        // They will be redirected to '/' unless you have backend logic
+        // to set claims upon signup.
         toast({ title: 'Signup Successful', description: 'Welcome to AstraBaby!' });
       }
        console.log(`${action} successful for user:`, userCredential.user.uid);
-      router.push('/'); // Redirect to home or dashboard after auth
+       await handleRedirect(userCredential); // Handle redirection based on role
+
     } catch (err: any) {
       console.error(`Authentication Error (${action}):`, err.code, err.message);
       // Provide more user-friendly error messages
@@ -112,9 +180,11 @@ export default function LoginPage() {
       }
       setError(message); // Set local form error
       toast({ title: `${action === 'login' ? 'Login' : 'Signup'} Failed`, description: message, variant: 'destructive' });
-    } finally {
-      setIsLoading(false);
+       setIsLoading(false); // Stop loading on error
     }
+    // finally { // Removed finally block - setIsLoading handled within try/catch and handleRedirect
+    //   setIsLoading(false);
+    // }
   };
 
    // --- Google Sign-In Handler ---
@@ -132,7 +202,8 @@ export default function LoginPage() {
            const result = await signInWithPopup(authInstance, provider);
             console.log('Google Sign-In successful for user:', result.user.uid);
            toast({ title: 'Login Successful', description: 'Welcome!' });
-           router.push('/'); // Redirect after successful Google sign-in
+           await handleRedirect(result); // Handle redirection based on role
+
        } catch (err: any) {
            console.error("Google Sign-In Error:", err.code, err.message);
            let message = "Could not sign in with Google. Please try again.";
@@ -150,9 +221,11 @@ export default function LoginPage() {
            }
            setError(message); // Set local form error
            toast({ title: 'Google Sign-In Failed', description: message, variant: 'destructive' });
-       } finally {
-           setIsLoading(false);
+            setIsLoading(false); // Stop loading on error
        }
+      //  finally { // Removed finally block
+      //      setIsLoading(false);
+      //  }
    };
 
 
