@@ -21,6 +21,8 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { useToast } from '@/hooks/use-toast';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { LogIn, UserPlus, Chrome, AlertCircle, Loader2 } from 'lucide-react'; // Added Loader2
+import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert'; // Import Alert
+import { Separator } from '@/components/ui/separator'; // Import Separator
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
@@ -158,6 +160,17 @@ export default function LoginPage() {
    const isFormDisabled = isLoading || isFirebaseReady === false;
    const showFirebaseError = isFirebaseReady === false;
 
+   // Show loading indicator while checking Firebase readiness
+   if (isFirebaseReady === null) {
+       return (
+           <div className="container mx-auto flex min-h-[calc(100vh-theme(spacing.14))] items-center justify-center px-4 py-12">
+                <div className="text-center space-y-3">
+                    <Loader2 className="h-8 w-8 animate-spin mx-auto text-primary" />
+                    <p className="text-muted-foreground">Loading login...</p>
+                </div>
+           </div>
+       );
+   }
 
   return (
     <div className="container mx-auto flex min-h-[calc(100vh-theme(spacing.14))] items-center justify-center px-4 py-12">
@@ -182,9 +195,13 @@ export default function LoginPage() {
                        </CardTitle>
                    </CardHeader>
                     <CardContent>
-                       <p className="text-sm text-destructive">
-                           Authentication is currently unavailable due to a configuration issue. Please ensure your Firebase environment variables are set correctly in <code>.env.local</code> and the server has been restarted. Check the browser console for more specific details.
-                       </p>
+                       <Alert variant="destructive">
+                          <AlertCircle className="h-4 w-4" />
+                          <AlertTitle>Service Unavailable</AlertTitle>
+                          <AlertDescription>
+                            Authentication is currently unavailable due to a configuration issue. Please ensure your Firebase environment variables are set correctly in <code>.env.local</code> and the server has been restarted. Check the browser console for more specific details.
+                          </AlertDescription>
+                      </Alert>
                    </CardContent>
                </Card>
            )}
