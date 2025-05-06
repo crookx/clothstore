@@ -2,7 +2,7 @@
 import ProductList from '@/components/product/product-list';
 import ProductListSkeleton from '@/components/product/product-list-skeleton'; // Import the skeleton
 import { fetchProducts } from '@/services/productService'; // Import the service
-import { firebaseInitializationError } from '@/lib/firebase/config'; // Import error state
+import { getFirebaseServices, firebaseInitializationError } from '@/lib/firebase/config'; // Import config function and error state
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"; // Import Alert components
 import { AlertCircle, Rocket } from 'lucide-react'; // Import Icon
 import { Suspense } from 'react';
@@ -20,9 +20,9 @@ function HeroSection() {
           Explore our universe of futuristic and comfy gear for your little star.
         </p>
         {/* Optional: Add a Call to Action Button */}
-        {/* <Link href="/products" passHref>
+        {/* <Link href="#products" passHref>
           <Button variant="secondary" size="lg" className="bg-accent hover:bg-accent/90 text-accent-foreground">
-            Shop All Categories
+             Shop Now
           </Button>
         </Link> */}
       </div>
@@ -30,58 +30,72 @@ function HeroSection() {
   );
 }
 
+
 // --- Product Loader Component (Server Component) ---
 async function ProductLoader() {
-  // Check for Firebase Initialization Error First
+  // Check for Firebase Initialization Error *First*
+  // This error is determined when the config module is loaded.
   if (firebaseInitializationError) {
-    // Error is already logged during initialization in config.ts
-    // We show a user-friendly message here.
     return (
       <Alert variant="destructive" className="max-w-2xl mx-auto mt-10">
         <AlertCircle className="h-4 w-4" />
-        <AlertTitle>Service Unavailable</AlertTitle>
+        <AlertTitle>Configuration Error</AlertTitle>
         <AlertDescription>
-           Could not load products due to a configuration issue. Please try again later or contact support if the problem persists.
-           Check the browser console for more specific error details related to Firebase initialization.
+          {firebaseInitializationError.message} {/* Display the detailed error from config */}
+          <br /><br />
+          Please ensure your <code>.env.local</code> file is correctly set up and restart the server.
         </AlertDescription>
       </Alert>
     );
   }
 
-  // If no initialization error, proceed to fetch products
-  const products = await fetchProducts(); // fetchProducts now returns [] or null on error
+  // If initialization seems okay, *try* to fetch products
+  let products: Awaited<ReturnType<typeof fetchProducts>>;
+  let fetchError: string | null = null;
 
-  if (products === null) {
-     // This case means ensureFirebaseServices failed *after* the initial check,
-     // or fetchProducts itself had a critical error.
-     return (
-       <Alert variant="destructive" className="max-w-2xl mx-auto mt-10">
-         <AlertCircle className="h-4 w-4" />
-         <AlertTitle>Error Loading Products</AlertTitle>
-         <AlertDescription>
-           There was a problem fetching product data from the database. Please try refreshing the page.
-         </AlertDescription>
-       </Alert>
-     );
+  try {
+    products = await fetchProducts(); // fetchProducts now handles internal errors and returns [] or null
+  } catch (err) {
+    // Catch errors thrown by fetchProducts (e.g., actual Firestore query errors)
+    console.error("ProductLoader: Error fetching products:", err);
+    products = null; // Indicate fetch failure
+    fetchError = err instanceof Error ? err.message : "An unknown error occurred while fetching products.";
   }
 
 
-  // --- Comment for User ---
-  // If you haven't populated your 'products' collection in Firestore,
-  // `products` will be empty even if Firebase initialized correctly.
-  // Use the seed script (`npm run seed:firestore` after setup) or manually add data.
+  // Handle cases where fetching failed or returned null/empty
+  if (products === null) {
+    return (
+      <Alert variant="destructive" className="max-w-2xl mx-auto mt-10">
+        <AlertCircle className="h-4 w-4" />
+        <AlertTitle>Error Loading Products</AlertTitle>
+        <AlertDescription>
+          {fetchError || "Could not load products at this time. The connection to the database might be unavailable or permissions might be incorrect."}
+          <br /><br />
+           Please try refreshing the page or check the console for more details. If you are the administrator, ensure the Firestore API is enabled and security rules allow reading the 'products' collection.
+        </AlertDescription>
+      </Alert>
+    );
+  }
 
+  if (products.length === 0) {
+      return (
+        <div className="text-center text-muted-foreground mt-10 border rounded-lg p-6 max-w-xl mx-auto bg-card">
+            <h3 className="text-lg font-semibold mb-2 text-card-foreground">Our Shelves Are Being Stocked!</h3>
+            <p className="mb-4">No products found in the database yet.</p>
+             <p className="text-sm">
+                 If you're the administrator, you can add products using the Admin Dashboard or run the seed script (`npm run seed:firestore` after setting up the service account) to populate the shop.
+             </p>
+        </div>
+      );
+  }
+
+  // --- Render Product List if successful ---
   return (
-    <>
+    <section id="products">
       <h2 className="text-3xl font-bold mb-8 text-center text-primary">Explore Our Galaxy of Gear</h2>
-      {products.length > 0 ? (
-        <ProductList products={products} />
-      ) : (
-        <p className="text-center text-muted-foreground mt-10">
-           Our product universe is currently empty! Use the seed script (`npm run seed:firestore` after setup) or add products via the Admin dashboard to populate the shop.
-        </p>
-      )}
-    </>
+      <ProductList products={products} />
+    </section>
   );
 }
 

@@ -1,10 +1,11 @@
+
 // src/services/orderService.ts
 'use server'; // Indicate this runs on the server
 
-import { ensureFirebaseServices } from '@/lib/firebase/config'; // Import the helper
+import { getFirebaseServices } from '@/lib/firebase/config'; // Import the function to get services
 import type { CartItem } from '@/types/product';
 import type { User } from 'firebase/auth'; // Import User type
-import { collection, addDoc, serverTimestamp, doc, getDoc, writeBatch, runTransaction } from 'firebase/firestore';
+import { collection, addDoc, serverTimestamp, doc, runTransaction, Timestamp } from 'firebase/firestore';
 
 interface ShippingInfo {
   firstName: string;
@@ -26,7 +27,7 @@ interface OrderData {
   tax: number;
   total: number;
   status: 'pending' | 'processing' | 'shipped' | 'delivered' | 'cancelled'; // Order status
-  createdAt: any; // Firestore server timestamp
+  createdAt: Timestamp; // Firestore server timestamp - Use Timestamp type
   // Add paymentIntentId or similar if using Stripe/other gateways
   // paymentIntentId?: string;
 }
@@ -63,26 +64,29 @@ export async function placeOrder(
     throw new Error("Cannot place an empty order.");
   }
 
-  let db;
+  const services = getFirebaseServices();
+  if (!services) {
+     // Error is already logged by getFirebaseServices
+    throw new Error("Order placement failed: Core services are unavailable.");
+  }
+  const { db } = services;
+
+  // Prepare order data before the transaction
+   const orderData: Omit<OrderData, 'createdAt'> = { // Omit createdAt initially
+    userId: currentUser ? currentUser.uid : null, // Get user ID if logged in
+    email: shippingInfo.email, // Use provided email
+    shippingInfo,
+    items: cart,
+    subtotal,
+    shippingCost,
+    tax,
+    total,
+    status: 'pending', // Initial status
+    // paymentIntentId: paymentIntentId || undefined, // Uncomment if using payment gateway
+   };
+
+
   try {
-    // Ensure Firebase services are ready before proceeding
-    const services = ensureFirebaseServices();
-    db = services.db;
-
-    const orderData: OrderData = {
-      userId: currentUser ? currentUser.uid : null, // Get user ID if logged in
-      email: shippingInfo.email, // Use provided email
-      shippingInfo,
-      items: cart,
-      subtotal,
-      shippingCost,
-      tax,
-      total,
-      status: 'pending', // Initial status
-      createdAt: serverTimestamp(), // Use Firestore server timestamp
-      // paymentIntentId: paymentIntentId || undefined, // Uncomment if using payment gateway
-    };
-
     // --- Firestore Transaction for Atomicity ---
     const orderId = await runTransaction(db, async (transaction) => {
       // 1. Check stock and prepare updates
@@ -92,24 +96,27 @@ export async function placeOrder(
         const productSnap = await transaction.get(productRef);
 
         if (!productSnap.exists()) {
-          throw new Error(`Product with ID ${item.id} (${item.name}) not found.`);
+          // Make error more specific
+          throw new Error(`Product not found: ${item.name} (ID: ${item.id}). Order cannot be placed.`);
         }
 
         const currentStock = productSnap.data().stock as number;
-        if (currentStock < item.quantity) {
-          throw new Error(`Insufficient stock for ${item.name}. Available: ${currentStock}, Requested: ${item.quantity}`);
+        if (currentStock === undefined || currentStock < item.quantity) {
+          throw new Error(`Insufficient stock for ${item.name}. Available: ${currentStock ?? 0}, Requested: ${item.quantity}. Order cannot be placed.`);
         }
 
         const newStock = currentStock - item.quantity;
         stockUpdates.push({ ref: productRef, newStock: newStock });
       }
 
-      // 2. Create the order document
+      // 2. Create the order document within the transaction
       const ordersCollectionRef = collection(db, 'orders');
       const newOrderRef = doc(ordersCollectionRef); // Firestore automatically generates ID
-      transaction.set(newOrderRef, orderData);
+      // Add createdAt using serverTimestamp() *inside* the transaction set
+      transaction.set(newOrderRef, { ...orderData, createdAt: serverTimestamp() });
 
-      // 3. Apply stock updates
+
+      // 3. Apply stock updates within the transaction
       stockUpdates.forEach(update => {
           transaction.update(update.ref, { stock: update.newStock });
       });
@@ -121,18 +128,23 @@ export async function placeOrder(
     return orderId;
 
   } catch (error) {
-    console.error("Error placing order:", error);
+    console.error("Error during order placement transaction:", error);
     // Re-throw specific errors or a generic one
     if (error instanceof Error) {
-        // Check if it's a known error type (e.g., from ensureFirebaseServices or transaction)
+        // Check for known error types
         if (error.message.includes('Insufficient stock') ||
-            error.message.includes('not found') ||
-            error.message.includes("Firebase services") || // Catch errors from ensureFirebaseServices
+            error.message.includes('Product not found') ||
             error.message.includes("transaction")) { // Catch potential transaction errors
-            throw error; // Re-throw specific errors
+            // Throw specific, user-friendly messages if possible
+             throw new Error(`Order failed: ${error.message}`);
         }
+         // Handle potential permission errors during transaction
+         if ((error as any).code === 'permission-denied') {
+             console.error("Firestore permission denied during order placement. Check security rules for 'orders' and 'products' collections.");
+             throw new Error("Order failed due to permission issues. Please contact support.");
+         }
     }
     // Throw a more generic error for other unexpected issues
-    throw new Error("Failed to place order. Please try again later.");
+    throw new Error("Failed to place order due to an unexpected error. Please try again later.");
   }
 }
