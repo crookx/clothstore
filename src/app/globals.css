@@ -86,3 +86,39 @@ body {
     @apply bg-background text-foreground;
   }
 }
+
+/* Horizontal Scroll Styles */
+.hide-scrollbar {
+  -ms-overflow-style: none;  /* IE and Edge */
+  scrollbar-width: none;     /* Firefox */
+}
+
+.hide-scrollbar::-webkit-scrollbar {
+  display: none;             /* Chrome, Safari and Opera */
+}
+
+/* Smooth Scroll Behavior */
+.scroll-smooth {
+  scroll-behavior: smooth;
+}
+
+/* Custom Scroll Container */
+.scroll-container {
+  overflow-x: auto;
+  overflow-y: hidden;
+  white-space: nowrap;
+  -webkit-overflow-scrolling: touch; /* Smooth scrolling on iOS devices */
+  scroll-snap-type: x mandatory;
+}
+
+/* Scroll Item Snap Points */
+.scroll-item {
+  scroll-snap-align: start;
+  flex: 0 0 auto;
+}
+
+/* Touch Scroll Momentum */
+.scroll-momentum {
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+}

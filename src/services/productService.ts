@@ -1,69 +1,126 @@
-
 // src/services/productService.ts
-import { getFirebaseServices } from '@/lib/firebase/config'; // Import the function to get services
+import { 
+  collection, 
+  getDocs, 
+  query, 
+  limit, 
+  where, 
+  doc, 
+  getDoc 
+} from 'firebase/firestore';
+import { getFirebaseServices } from '@/lib/firebase/config';
 import type { Product } from '@/types/product';
-import { collection, getDocs, query, limit, DocumentData, QueryDocumentSnapshot } from 'firebase/firestore';
 
-/**
- * Fetches a list of products from the Firestore database.
- *
- * Assumes a 'products' collection exists in Firestore, where each document
- * matches the Product interface structure.
- *
- * @param count - The maximum number of products to fetch. Defaults to 20.
- * @returns A promise that resolves to an array of Product objects, or null if Firebase services are unavailable or fetching fails.
- * @throws Will re-throw critical Firestore errors after logging them.
- */
-export async function fetchProducts(count: number = 20): Promise<Product[] | null> {
-  const services = getFirebaseServices();
-  if (!services) {
-    console.error("fetchProducts: Firebase services are unavailable due to initialization failure.");
-    // Return null because the core service needed is missing. The error is already logged in config.
-    return null;
-  }
-  const { db } = services;
+export interface FetchProductsOptions {
+  limit?: number;
+  featured?: boolean;
+  category?: string;
+}
 
+export async function fetchProducts(options: FetchProductsOptions = {}): Promise<Product[]> {
   try {
-    const productsCollectionRef = collection(db, 'products');
-    const q = query(productsCollectionRef, limit(count));
-    const querySnapshot = await getDocs(q);
+    const queryParams = new URLSearchParams();
+    
+    // Add query parameters if they exist
+    if (options.limit) queryParams.append('limit', options.limit.toString());
+    if (options.featured) queryParams.append('featured', options.featured.toString());
+    if (options.category) queryParams.append('category', options.category);
 
-    // Check if the snapshot is empty
-    if (querySnapshot.empty) {
-        console.log("fetchProducts: No products found in the 'products' collection.");
-        return []; // Return an empty array if no documents exist
-    }
-
-    const products = querySnapshot.docs.map((doc: QueryDocumentSnapshot<DocumentData>): Product => {
-      const data = doc.data();
-      // Provide defaults for potentially missing fields
-      return {
-        id: doc.id,
-        name: data.name || 'Unnamed Product',
-        description: data.description || 'No description available.',
-        price: typeof data.price === 'number' ? data.price : 0,
-        category: data.category || 'Uncategorized',
-        imageUrl: data.imageUrl || 'https://picsum.photos/seed/placeholder/400/300', // Default placeholder
-        stock: typeof data.stock === 'number' ? data.stock : 0,
-        // Ensure all necessary fields from the Product type are mapped
-      };
+    const response = await fetch(`/api/products?${queryParams.toString()}`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      cache: 'no-store' // Disable caching for fresh data
     });
 
-    return products;
-  } catch (error: any) {
-    // Log Firestore query errors specifically
-    console.error("Error fetching products from Firestore:", error);
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.message || 'Failed to fetch products');
+    }
 
-     // Check for permission denied errors specifically
-     if (error.code === 'permission-denied') {
-        console.error("Firestore permission denied. Check security rules for the 'products' collection.");
-        // Returning null might be appropriate here as the data is inaccessible
-        // Alternatively, throw a specific error if the calling component needs to know
-         // throw new Error("Permission denied while fetching products. Check Firestore rules.");
-         return null; // Let the caller handle the null case (e.g., show an error message)
-     }
+    const data = await response.json();
+    return data;
 
-    // For other errors, re-throw to indicate a more general fetch failure
-    throw new Error(`Failed to fetch products from Firestore. Original error: ${error.message || String(error)}`);
+  } catch (error) {
+    console.error('Product fetch error:', error);
+    throw new Error('Failed to fetch products');
   }
+}
+
+export async function fetchProductById(productId: string): Promise<Product | null> {
+  const services = getFirebaseServices();
+  if (!services?.db) throw new Error('Firebase services not available');
+
+  try {
+    const productRef = doc(services.db, 'products', productId);
+    const productDoc = await getDoc(productRef);
+
+    if (!productDoc.exists()) {
+      return null;
+    }
+
+    const data = productDoc.data();
+    return {
+      id: productDoc.id,
+      ...data,
+      imageUrls: data.imageUrls || [] // Ensure imageUrls is always an array
+    } as Product;
+  } catch (error) {
+    console.error("Error fetching product:", error);
+    throw error;
+  }
+}
+
+export async function fetchRelatedProducts(productIds: string[]): Promise<Product[]> {
+  const services = getFirebaseServices();
+  if (!services) throw new Error('Firebase services not available');
+  if (!productIds?.length) return [];
+  
+  try {
+    const products: Product[] = [];
+    
+    if (!services.db) throw new Error('Firestore instance is not available');
+
+    // Process in chunks of 10 due to Firestore limitation
+    for (let i = 0; i < productIds.length; i += 10) {
+      const chunk = productIds.slice(i, i + 10);
+      const productsRef = collection(services.db, 'products');
+      const q = query(productsRef, where('id', 'in', chunk));
+      const querySnapshot = await getDocs(q);
+      
+      products.push(...querySnapshot.docs.map(doc => {
+        const data = doc.data();
+        return {
+          id: doc.id,
+          ...data,
+          imageUrls: data.imageUrls || [] // Ensure imageUrls is always an array
+        } as Product;
+      }));
+    }
+    
+    return products;
+  } catch (error) {
+    console.error("Error fetching related products:", error);
+    throw error;
+  }
+}
+
+export async function fetchProduct(id: string): Promise<Product> {
+  const services = getFirebaseServices();
+  if (!services?.db) throw new Error('Firebase services not available');
+
+  const docRef = doc(services.db, 'products', id);
+  const docSnap = await getDoc(docRef);
+  
+  if (!docSnap.exists()) {
+    throw new Error('Product not found');
+  }
+
+  const data = docSnap.data();
+  return {
+    id: docSnap.id,
+    ...data,
+    imageUrls: data.imageUrls || [] // Ensure imageUrls is always an array
+  } as Product;
 }

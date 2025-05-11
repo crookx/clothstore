@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -14,14 +13,23 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Edit, Trash2, Eye, AlertCircle } from 'lucide-react'; // Added AlertCircle
+import { Checkbox } from "@/components/ui/checkbox";
+import { Edit, Trash2, AlertCircle, Download, Archive } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { getFirebaseServices, firebaseInitializationError } from '@/lib/firebase/config'; // Import getFirebaseServices
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
-import EditProductDialog from './edit-product-dialog'; // Import the Edit dialog
-import DeleteProductDialog from './delete-product-dialog'; // Import the Delete dialog
-import Image from 'next/image'; // Import Next Image
+import { 
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { getFirebaseServices, firebaseInitializationError } from '@/lib/firebase/config';
+import { useToast } from "@/components/ui/use-toast";
+import EditProductDialog from './edit-product-dialog';
+import DeleteProductDialog from './delete-product-dialog';
+import Image from 'next/image';
+import { PLACEHOLDER_IMAGE_URL } from '@/lib/constants';
 
 export default function ProductListAdmin() {
     const [products, setProducts] = useState<Product[]>([]);
@@ -30,58 +38,66 @@ export default function ProductListAdmin() {
     const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
     const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
     const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+    const [failedImages, setFailedImages] = useState<Set<string>>(new Set());
+    const [selectedProducts, setSelectedProducts] = useState<Set<string>>(new Set());
+    const [sortColumn, setSortColumn] = useState<string>('name');
+    const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+    const [searchQuery, setSearchQuery] = useState<string>('');
+    const { toast } = useToast();
 
-     // Ref to track mounted state
-     const isMounted = useState(true)[0]; // Using array destructuring to prevent re-render on ref change
+    const handleImageError = (failedSrc: string) => {
+        setFailedImages(prev => new Set(prev).add(failedSrc));
+    };
+
+    const getImageUrl = (product: Product) => {
+        const imageUrl = product.imageUrls?.[0] || PLACEHOLDER_IMAGE_URL;
+        return failedImages.has(imageUrl) ? PLACEHOLDER_IMAGE_URL : imageUrl;
+    };
 
     useEffect(() => {
-         // Check for Firebase initialization error first
-         if (firebaseInitializationError) {
-             setError(`Firebase Initialization Error: ${firebaseInitializationError.message}. Cannot fetch products.`);
-             setIsLoading(false);
-             return;
-         }
+        if (firebaseInitializationError) {
+            setError(`Firebase Initialization Error: ${firebaseInitializationError.error?.message}. Cannot fetch products.`);
+            setIsLoading(false);
+            return;
+        }
 
-         // Double check if services are actually available ( belt-and-suspenders approach)
-         if (!getFirebaseServices()) {
-              setError("Core Firebase services are unavailable. Cannot fetch products.");
-              setIsLoading(false);
-              return;
-         }
+        if (!getFirebaseServices()) {
+            setError("Core Firebase services are unavailable. Cannot fetch products.");
+            setIsLoading(false);
+            return;
+        }
 
-        let active = true; // Flag to prevent state updates on unmounted component
+        let active = true;
 
         async function loadProducts() {
-             setIsLoading(true);
-             setError(null);
-             try {
-                 const fetchedProducts = await fetchProducts(200); // Fetch more for admin view
-                 if (!active) return; // Don't update state if component unmounted
-
-                 if (fetchedProducts === null) {
-                     // This indicates an error during fetch (logged in fetchProducts) or init error after first check
-                     setError("Failed to load products. Check console for details.");
-                     setProducts([]); // Set to empty array on failure
-                 } else {
-                     setProducts(fetchedProducts);
-                 }
-             } catch (err) {
+            setIsLoading(true);
+            setError(null);
+            try {
+                const fetchedProducts = await fetchProducts();
                 if (!active) return;
-                 console.error("Error in ProductListAdmin fetch:", err);
-                 setError(err instanceof Error ? err.message : "An unknown error occurred while fetching products.");
-                 setProducts([]); // Set to empty array on error
-             } finally {
+
+                if (fetchedProducts === null) {
+                    setError("Failed to load products. Check console for details.");
+                    setProducts([]);
+                } else {
+                    setProducts(fetchedProducts);
+                }
+            } catch (err) {
+                if (!active) return;
+                console.error("Error in ProductListAdmin fetch:", err);
+                setError(err instanceof Error ? err.message : "An unknown error occurred while fetching products.");
+                setProducts([]);
+            } finally {
                 if (active) setIsLoading(false);
-             }
-         }
+            }
+        }
 
         loadProducts();
 
         return () => {
-            active = false; // Set flag on unmount
+            active = false;
         };
-    }, [isMounted]); // Dependency array ensures this runs only once on mount
-
+    }, []);
 
     const handleEditClick = (product: Product) => {
         setSelectedProduct(product);
@@ -97,65 +113,154 @@ export default function ProductListAdmin() {
         setSelectedProduct(null);
         setIsEditDialogOpen(false);
         setIsDeleteDialogOpen(false);
-        // TODO: Implement a more efficient refresh mechanism
-        // For now, re-fetch all products. Consider optimistic updates or targeted re-fetch later.
-        // Re-fetch data after closing dialog (simple approach)
+
         async function reload() {
-             setIsLoading(true);
-             setError(null);
-             try {
-                 const fetchedProducts = await fetchProducts(200);
-                 if (fetchedProducts === null) {
-                      setError("Failed to reload products after update.");
-                      setProducts([]);
-                 } else {
-                      setProducts(fetchedProducts);
-                 }
-             } catch (err) {
-                 console.error("Error reloading products:", err);
-                 setError("Failed to reload products after update.");
-             } finally {
-                  setIsLoading(false);
-             }
+            setIsLoading(true);
+            setError(null);
+            try {
+                const fetchedProducts = await fetchProducts();
+                if (fetchedProducts === null) {
+                    setError("Failed to reload products after update.");
+                    setProducts([]);
+                } else {
+                    setProducts(fetchedProducts);
+                }
+            } catch (err) {
+                console.error("Error reloading products:", err);
+                setError("Failed to reload products after update.");
+            } finally {
+                setIsLoading(false);
+            }
         }
         reload();
     };
+
+    // Handle bulk selection
+    const handleSelectAll = (checked: boolean) => {
+        if (checked) {
+            setSelectedProducts(new Set(products.map(p => p.id)));
+        } else {
+            setSelectedProducts(new Set());
+        }
+    };
+
+    const handleSelectProduct = (productId: string, checked: boolean) => {
+        const newSelected = new Set(selectedProducts);
+        if (checked) {
+            newSelected.add(productId);
+        } else {
+            newSelected.delete(productId);
+        }
+        setSelectedProducts(newSelected);
+    };
+
+    // Bulk actions
+    const handleBulkAction = async (action: 'export' | 'archive' | 'delete' | 'publish' | 'unpublish') => {
+        if (selectedProducts.size === 0) return;
+        
+        try {
+            const response = await fetch('/api/products/bulk', {
+                method: 'POST',
+                body: JSON.stringify({
+                    action,
+                    productIds: Array.from(selectedProducts)
+                })
+            });
+
+            if (!response.ok) throw new Error('Bulk action failed');
+            
+            toast({
+                title: "Success",
+                description: `${action} completed successfully`
+            });
+        } catch (error) {
+            toast({
+                variant: "destructive",
+                title: "Error",
+                description: error instanceof Error ? error.message : "An unknown error occurred"
+            });
+        }
+    };
+
+    const filteredProducts = products.filter((product) => {
+        const searchTerm = searchQuery.toLowerCase();
+        const nameMatch = product.name?.toLowerCase().includes(searchTerm) ?? false;
+        const categoryMatch = product.category?.toLowerCase().includes(searchTerm) ?? false;
+        const descriptionMatch = product.description?.toLowerCase().includes(searchTerm) ?? false;
+        const priceMatch = product.price?.toString().includes(searchTerm) ?? false;
+
+        return nameMatch || categoryMatch || descriptionMatch || priceMatch;
+    });
 
     if (isLoading) {
         return <ProductListSkeleton />;
     }
 
-    // Display specific error if Firebase init failed
     if (firebaseInitializationError || error?.includes("Core Firebase services")) {
         return (
-             <Alert variant="destructive">
+            <Alert variant="destructive">
                 <AlertCircle className="h-4 w-4" />
-                 <AlertTitle>Configuration Error</AlertTitle>
-                 <AlertDescription>{error || firebaseInitializationError?.message}</AlertDescription>
+                <AlertTitle>Configuration Error</AlertTitle>
+                <AlertDescription>{error || firebaseInitializationError?.error?.message}</AlertDescription>
             </Alert>
         );
     }
 
-    // Display general fetch error
-     if (error) {
+    if (error) {
         return (
-             <Alert variant="destructive">
-                 <AlertCircle className="h-4 w-4" />
-                 <AlertTitle>Error Loading Products</AlertTitle>
-                 <AlertDescription>{error}</AlertDescription>
+            <Alert variant="destructive">
+                <AlertCircle className="h-4 w-4" />
+                <AlertTitle>Error Loading Products</AlertTitle>
+                <AlertDescription>{error}</AlertDescription>
             </Alert>
         );
     }
-
 
     return (
         <Card>
             <CardHeader>
-                <CardTitle>Existing Products ({products.length})</CardTitle>
-                <CardDescription>Manage your current product inventory.</CardDescription>
+                <div className="flex items-center justify-between">
+                    <div>
+                        <CardTitle>Existing Products ({filteredProducts.length})</CardTitle>
+                        <CardDescription>Manage your current product inventory.</CardDescription>
+                    </div>
+                    {selectedProducts.size > 0 && (
+                        <div className="flex items-center gap-2">
+                            <span className="text-sm text-muted-foreground">
+                                {selectedProducts.size} selected
+                            </span>
+                            <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                    <Button variant="outline" size="sm">
+                                        Bulk Actions
+                                    </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent>
+                                    <DropdownMenuItem onClick={() => handleBulkAction('export')}>
+                                        <Download className="w-4 h-4 mr-2" />
+                                        Export Selected
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem onClick={() => handleBulkAction('archive')}>
+                                        <Archive className="w-4 h-4 mr-2" />
+                                        Archive Selected
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem onClick={() => handleBulkAction('delete')}>
+                                        Delete Selected
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem onClick={() => handleBulkAction('publish')}>
+                                        Publish Selected
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem onClick={() => handleBulkAction('unpublish')}>
+                                        Unpublish Selected
+                                    </DropdownMenuItem>
+                                </DropdownMenuContent>
+                            </DropdownMenu>
+                        </div>
+                    )}
+                </div>
             </CardHeader>
             <CardContent>
-                {products.length === 0 && !isLoading ? (
+                {filteredProducts.length === 0 && !isLoading ? (
                     <p className="text-center text-muted-foreground py-6">
                         No products found. Use the "Add New Product" tab to add inventory.
                     </p>
@@ -164,6 +269,12 @@ export default function ProductListAdmin() {
                         <Table>
                             <TableHeader>
                                 <TableRow>
+                                    <TableHead className="w-[40px]">
+                                        <Checkbox
+                                            checked={selectedProducts.size === filteredProducts.length}
+                                            onCheckedChange={handleSelectAll}
+                                        />
+                                    </TableHead>
                                     <TableHead className="w-[80px] hidden sm:table-cell">Image</TableHead>
                                     <TableHead>Name</TableHead>
                                     <TableHead>Category</TableHead>
@@ -173,20 +284,27 @@ export default function ProductListAdmin() {
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
-                                {products.map((product) => (
+                                {filteredProducts.map((product) => (
                                     <TableRow key={product.id}>
-                                    <TableCell className="hidden sm:table-cell">
+                                        <TableCell>
+                                            <Checkbox
+                                                checked={selectedProducts.has(product.id)}
+                                                onCheckedChange={(checked) => 
+                                                    handleSelectProduct(product.id, checked as boolean)
+                                                }
+                                            />
+                                        </TableCell>
+                                        <TableCell className="hidden sm:table-cell">
                                             <div className="relative h-12 w-12 overflow-hidden rounded-md border">
                                                 <Image
-                                                    // Use placeholder if imageUrl is potentially missing or invalid
-                                                    src={product.imageUrl || 'https://picsum.photos/seed/placeholder/80/80'}
-                                                    alt={product.name}
-                                                    fill // Use fill instead of layout
-                                                    sizes="80px" // Provide sizes hint
-                                                    style={{ objectFit: 'cover' }} // Use style for objectFit
+                                                    src={getImageUrl(product)}
+                                                    alt={product.name || ''}
+                                                    fill
+                                                    sizes="80px"
+                                                    style={{ objectFit: 'cover' }}
                                                     className="rounded-md"
-                                                    data-ai-hint={`${product.category.toLowerCase()} product thumbnail`}
-                                                    onError={(e) => { e.currentTarget.src = 'https://picsum.photos/seed/placeholder/80/80'; }} // Fallback image on error
+                                                    data-ai-hint={`${product.category?.toLowerCase() || 'product'} thumbnail`}
+                                                    onError={() => handleImageError(product.imageUrls?.[0] || PLACEHOLDER_IMAGE_URL)}
                                                 />
                                             </div>
                                         </TableCell>
@@ -200,9 +318,6 @@ export default function ProductListAdmin() {
                                         <TableCell className="hidden md:table-cell text-right">{product.stock}</TableCell>
                                         <TableCell className="text-right">
                                             <div className="flex gap-1 justify-end">
-                                                {/* <Button variant="ghost" size="icon" className="h-7 w-7" title="View Details">
-                                                    <Eye className="h-4 w-4" />
-                                                </Button> */}
                                                 <Button
                                                     variant="outline"
                                                     size="icon"
@@ -213,9 +328,9 @@ export default function ProductListAdmin() {
                                                     <Edit className="h-4 w-4" />
                                                 </Button>
                                                 <Button
-                                                    variant="outline" // Changed to outline for less visual weight initially
+                                                    variant="outline"
                                                     size="icon"
-                                                    className="h-7 w-7 text-destructive border-destructive hover:bg-destructive/10" // Destructive outline style
+                                                    className="h-7 w-7 text-destructive border-destructive hover:bg-destructive/10"
                                                     title="Delete Product"
                                                     onClick={() => handleDeleteClick(product)}
                                                 >
@@ -231,7 +346,6 @@ export default function ProductListAdmin() {
                 )}
             </CardContent>
 
-            {/* Edit Product Dialog */}
             {selectedProduct && (
                 <EditProductDialog
                     isOpen={isEditDialogOpen}
@@ -240,8 +354,7 @@ export default function ProductListAdmin() {
                 />
             )}
 
-             {/* Delete Product Dialog */}
-             {selectedProduct && (
+            {selectedProduct && (
                 <DeleteProductDialog
                     isOpen={isDeleteDialogOpen}
                     onClose={handleDialogClose}
@@ -252,14 +365,29 @@ export default function ProductListAdmin() {
     );
 }
 
+// Helper functions for CSV export
+function convertToCSV(data: any[]) {
+    const headers = Object.keys(data[0]);
+    const rows = data.map(obj => headers.map(header => obj[header]));
+    return [headers, ...rows].map(row => row.join(',')).join('\n');
+}
 
-// Skeleton Loader Component
+function downloadCSV(csv: string, filename: string) {
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.setAttribute('download', filename);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+}
+
 function ProductListSkeleton() {
     return (
         <Card>
             <CardHeader>
-                <Skeleton className="h-6 w-48" /> {/* CardTitle */}
-                <Skeleton className="h-4 w-64 mt-1" /> {/* CardDescription */}
+                <Skeleton className="h-6 w-48" />
+                <Skeleton className="h-4 w-64 mt-1" />
             </CardHeader>
             <CardContent>
                 <Table>
@@ -274,11 +402,11 @@ function ProductListSkeleton() {
                         </TableRow>
                     </TableHeader>
                     <TableBody>
-                        {[...Array(5)].map((_, index) => ( // Show 5 skeleton rows
+                        {[...Array(5)].map((_, index) => (
                             <TableRow key={index}>
                                 <TableCell className="hidden sm:table-cell"><Skeleton className="h-12 w-12 rounded-md" /></TableCell>
                                 <TableCell><Skeleton className="h-5 w-40" /></TableCell>
-                                <TableCell><Skeleton className="h-6 w-20 rounded-full" /></TableCell> {/* Badge */}
+                                <TableCell><Skeleton className="h-6 w-20 rounded-full" /></TableCell>
                                 <TableCell className="hidden md:table-cell text-right"><Skeleton className="h-5 w-16" /></TableCell>
                                 <TableCell className="hidden md:table-cell text-right"><Skeleton className="h-5 w-12" /></TableCell>
                                 <TableCell className="text-right">

@@ -7,7 +7,12 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"; // 
 import { AlertCircle, Rocket } from 'lucide-react'; // Import Icon
 import { Suspense } from 'react';
 import { Button } from '@/components/ui/button';
+import FeaturedCategories from '@/components/home/FeaturedCategories'; // New component
 import Link from 'next/link';
+import { NewsletterForm } from '@/components/marketing/NewsletterForm';
+import ValuePropositions from '@/components/home/ValuePropositions';
+import FeaturedProducts from '@/components/home/FeaturedProducts';
+import RecentBlogPosts from '@/components/home/RecentBlogPosts';
 
 // --- Hero Section Component ---
 function HeroSection() {
@@ -20,11 +25,11 @@ function HeroSection() {
           Explore our universe of futuristic and comfy gear for your little star.
         </p>
         {/* Optional: Add a Call to Action Button */}
-        {/* <Link href="#products" passHref>
+        <Link href="#products" passHref>
           <Button variant="secondary" size="lg" className="bg-accent hover:bg-accent/90 text-accent-foreground">
              Shop Now
           </Button>
-        </Link> */}
+        </Link>
       </div>
     </div>
   );
@@ -58,7 +63,7 @@ async function ProductLoader() {
   } catch (err) {
     // Catch errors thrown by fetchProducts (e.g., actual Firestore query errors)
     console.error("ProductLoader: Error fetching products:", err);
-    products = null; // Indicate fetch failure
+    products = []; // Initialize as empty array on fetch failure
     fetchError = err instanceof Error ? err.message : "An unknown error occurred while fetching products.";
   }
 
@@ -104,14 +109,30 @@ async function ProductLoader() {
 export default function Home() {
   return (
     <div className="container mx-auto px-4 py-8">
-      {/* Display the Hero Section */}
       <HeroSection />
-
-      {/* Use Suspense to show a loading skeleton while products are fetched */}
-      <Suspense fallback={<ProductListSkeleton count={8} />}>
-         {/* @ts-expect-error Server Component */}
-        <ProductLoader />
-      </Suspense>
+      
+      {/* Add Value Propositions */}
+      <ValuePropositions />
+      
+      {/* Add Featured Products */}
+      <FeaturedProducts />
+      
+      {/* Featured Categories */}
+      <FeaturedCategories />
+      
+      {/* Newsletter Section */}
+      <section className="py-12 bg-muted/40 rounded-lg mb-12">
+        <div className="max-w-xl mx-auto px-4">
+          <h2 className="text-2xl font-bold text-center mb-4">Stay Updated</h2>
+          <p className="text-center text-muted-foreground mb-6">
+            Subscribe to our newsletter for exclusive offers and updates
+          </p>
+          <NewsletterForm />
+        </div>
+      </section>
+      
+      {/* Recent Blog Posts */}
+      <RecentBlogPosts />
     </div>
   );
 }

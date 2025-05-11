@@ -1,11 +1,14 @@
-
 // src/services/orderService.ts
 'use server'; // Indicate this runs on the server
 
 import { getFirebaseServices } from '@/lib/firebase/config'; // Import the function to get services
 import type { CartItem } from '@/types/product';
 import type { User } from 'firebase/auth'; // Import User type
-import { collection, addDoc, serverTimestamp, doc, runTransaction, Timestamp } from 'firebase/firestore';
+import { collection, addDoc, serverTimestamp, doc, runTransaction, Timestamp, updateDoc, query, where, getDocs, getDoc } from 'firebase/firestore';
+import { Order } from '@/types/order';
+import { Product } from '@/types/product';
+import { db } from '@/lib/db';
+import { sendOrderConfirmation, sendOrderStatusUpdate } from '@/lib/email';
 
 interface ShippingInfo {
   firstName: string;
@@ -147,4 +150,78 @@ export async function placeOrder(
     // Throw a more generic error for other unexpected issues
     throw new Error("Failed to place order due to an unexpected error. Please try again later.");
   }
+}
+
+/**
+ * Creates a new order and updates product inventory.
+ *
+ * @param orderData - The order data excluding id, status, and createdAt.
+ * @returns The ID of the newly created order.
+ * @throws Throws an error if stock is insufficient or if the operation fails.
+ */
+export async function createOrder(orderData: Omit<Order, 'id' | 'createdAt' | 'updatedAt'>) {
+  const orderRef = db.collection('orders').doc();
+  const now = new Date().toISOString();
+
+  const order: Order = {
+    ...orderData,
+    id: orderRef.id,
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  await orderRef.set(order);
+  await sendOrderConfirmation(order);
+
+  return order;
+}
+
+/**
+ * Retrieves orders for a specific user.
+ *
+ * @param userId - The ID of the user.
+ * @returns An array of orders belonging to the user.
+ */
+export async function getUserOrders(userId: string) {
+  const ordersQuery = query(
+    collection(db, 'orders'),
+    where('userId', '==', userId)
+  );
+
+  const snapshot = await getDocs(ordersQuery);
+  return snapshot.docs.map(doc => ({
+    id: doc.id,
+    ...doc.data()
+  } as Order));
+}
+
+/**
+ * Updates the status of an order.
+ *
+ * @param orderId - The ID of the order to update.
+ * @param status - The new status of the order.
+ */
+export async function updateOrderStatus(orderId: string, status: Order['status']) {
+  const orderRef = db.collection('orders').doc(orderId);
+  const orderDoc = await orderRef.get();
+
+  if (!orderDoc.exists) {
+    throw new Error('Order not found');
+  }
+
+  const order = orderDoc.data() as Order;
+  await orderRef.update({
+    status,
+    updatedAt: new Date().toISOString(),
+  });
+
+  await sendOrderStatusUpdate({
+    ...order,
+    status,
+  });
+
+  return {
+    ...order,
+    status,
+  };
 }
